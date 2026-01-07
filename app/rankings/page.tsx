@@ -1,10 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { useState, useEffect } from "react";
+import Header from "@/components/Header";
+import { useLang } from "@/lib/lang";
 import { getPlayers, getSessionUser, addToWatchlist, getWatchlist, removeFromWatchlist, Player } from "@/lib/store";
 
 export default function RankingsPage() {
+  const { t } = useLang();
   const [players, setPlayers] = useState<Player[]>([]);
   const [watchlist, setWatchlist] = useState<string[]>([]);
   const [search, setSearch] = useState("");
@@ -20,10 +22,7 @@ export default function RankingsPage() {
   }, []);
 
   const toggleWatchlist = (playerId: string) => {
-    if (!user) {
-      alert("Please login first");
-      return;
-    }
+    if (!user) { alert(t("请先登录", "Please login first")); return; }
     if (watchlist.includes(playerId)) {
       removeFromWatchlist(playerId);
       setWatchlist(watchlist.filter(id => id !== playerId));
@@ -50,53 +49,23 @@ export default function RankingsPage() {
 
   return (
     <div className="app">
-      <header className="header">
-        <div className="header-inner">
-          <Link href="/" className="logo">
-            <div className="logo-icon">
-              <svg viewBox="0 0 40 40" fill="none">
-                <circle cx="20" cy="20" r="18" stroke="currentColor" strokeWidth="2.5"/>
-                <path d="M20 4 C20 4, 8 16, 20 20 C32 24, 20 36, 20 36" stroke="currentColor" strokeWidth="2.5" fill="none"/>
-                <path d="M4 20 H36" stroke="currentColor" strokeWidth="2.5"/>
-              </svg>
-            </div>
-            <div className="logo-text">
-              <span className="logo-title">蓝本</span>
-              <span className="logo-sub">Fantasy 篮球决策平台</span>
-            </div>
-          </Link>
-          <Link href="/" className="btn btn-ghost">← 返回首页</Link>
-        </div>
-      </header>
-
-      <nav className="main-nav">
-        <div className="nav-inner">
-          <Link href="/" className="nav-link">首页</Link>
-          <Link href="/rankings" className="nav-link active">球员排名</Link>
-          <Link href="/draft-guide" className="nav-link">选秀指南</Link>
-          <Link href="/cheat-sheet" className="nav-link">备忘单</Link>
-          <Link href="/how-to-play" className="nav-link">新手入门</Link>
-          <Link href="/my-team" className="nav-link">我的球队</Link>
-          <Link href="/mock-draft" className="nav-link">模拟选秀</Link>
-        </div>
-      </nav>
+      <Header />
 
       <main className="page-content">
         <div className="page-header">
-          <h1 className="page-title">球员排名 Rankings</h1>
-          <p className="page-desc">2024-25 赛季 Fantasy 篮球球员排名，点击 ⭐ 加入关注列表</p>
+          <h1 className="page-title">{t("球员排名", "Player Rankings")}</h1>
+          <p className="page-desc">{t("2024-25 赛季 Fantasy 篮球球员排名，点击 ⭐ 加入关注列表", "2024-25 Fantasy Basketball Rankings. Click ⭐ to add to watchlist")}</p>
         </div>
 
-        {/* Filters */}
         <div className="filters-bar">
           <input
             className="filter-search"
-            placeholder="搜索球员..."
+            placeholder={t("搜索球员...", "Search players...")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
           <select className="filter-select" value={posFilter} onChange={(e) => setPosFilter(e.target.value)}>
-            <option value="ALL">全部位置</option>
+            <option value="ALL">{t("全部位置", "All Positions")}</option>
             <option value="PG">PG</option>
             <option value="SG">SG</option>
             <option value="SF">SF</option>
@@ -104,23 +73,22 @@ export default function RankingsPage() {
             <option value="C">C</option>
           </select>
           <select className="filter-select" value={sortBy} onChange={(e) => setSortBy(e.target.value as any)}>
-            <option value="rank">按排名</option>
-            <option value="adp">按 ADP</option>
-            <option value="ppg">按得分</option>
-            <option value="rpg">按篮板</option>
-            <option value="apg">按助攻</option>
+            <option value="rank">{t("按排名", "By Rank")}</option>
+            <option value="adp">{t("按 ADP", "By ADP")}</option>
+            <option value="ppg">{t("按得分", "By PPG")}</option>
+            <option value="rpg">{t("按篮板", "By RPG")}</option>
+            <option value="apg">{t("按助攻", "By APG")}</option>
           </select>
         </div>
 
-        {/* Player Table */}
         <div className="table-container">
           <table className="data-table">
             <thead>
               <tr>
-                <th style={{ width: 50 }}>排名</th>
-                <th>球员</th>
-                <th>球队</th>
-                <th>位置</th>
+                <th>{t("排名", "Rank")}</th>
+                <th>{t("球员", "Player")}</th>
+                <th>{t("球队", "Team")}</th>
+                <th>{t("位置", "Pos")}</th>
                 <th>ADP</th>
                 <th>PPG</th>
                 <th>RPG</th>
@@ -129,7 +97,7 @@ export default function RankingsPage() {
                 <th>BPG</th>
                 <th>FG%</th>
                 <th>FT%</th>
-                <th style={{ width: 60 }}>关注</th>
+                <th>{t("关注", "Watch")}</th>
               </tr>
             </thead>
             <tbody>
