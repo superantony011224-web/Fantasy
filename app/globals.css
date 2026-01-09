@@ -1684,3 +1684,37 @@ button {
     display: none;
   }
 }
+
+/* Empty Feed State */
+.empty-feed {
+  text-align: center;
+  padding: 60px 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+}
+.empty-feed p {
+  color: var(--text-muted);
+  margin-bottom: 20px;
+}
+
+/* Trending Tags */
+.trending-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.trending-tag {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 6px 12px;
+  border-radius: 16px;
+  font-size: 13px;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+.trending-tag:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}

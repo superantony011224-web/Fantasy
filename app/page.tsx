@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import Header from "@/components/Header";
 import { useLang } from "@/lib/lang";
-import { getSessionUser } from "@/lib/store";
+import { getSessionUser, listInsights, listLeagues, Insight, League } from "@/lib/store";
 
 export default function HomePage() {
   const { t } = useLang();
@@ -12,26 +12,69 @@ export default function HomePage() {
   const [showHero, setShowHero] = useState(true);
   const [topTab, setTopTab] = useState<"insights" | "leagues">("insights");
   const [feedTab, setFeedTab] = useState<"forYou" | "latest">("forYou");
+  const [insights, setInsights] = useState<Insight[]>([]);
+  const [leagues, setLeagues] = useState<League[]>([]);
 
   useEffect(() => {
     const u = getSessionUser();
     if (u) setAuthed(true);
+    
+    // 加载真实帖子
+    const allInsights = listInsights();
+    setInsights(allInsights.sort((a, b) => b.createdAt - a.createdAt));
+    
+    // 加载联赛
+    const allLeagues = listLeagues();
+    setLeagues(allLeagues.sort((a, b) => b.createdAt - a.createdAt));
   }, []);
 
-  // 这些是用户创建的内容，保持原语言
-  const insights = [
-    { id: "why-tatum-1-06", title: "为什么我在 1.06 放弃了 Tatum", leagueName: "LeBron Lab", author: "@shuyang", watching: 238, heat: 238 },
-    { id: "auction-scarcity", title: "拍卖联赛：别追稀缺叙事", leagueName: "Auction Chaos", author: "@ivy", watching: 154, heat: 154 },
-    { id: "defense-wins", title: "Defense wins: lock stable minutes first", leagueName: "Defense Wins", author: "@coachk", watching: 91, heat: 91 },
-    { id: "pace-guards", title: "Mid rounds strategy: stack high-pace guards", leagueName: "Pace Merchants", author: "@jules", watching: 73, heat: 73 },
+  // 解析帖子内容（处理带 metadata 的 body）
+  const parseInsight = (insight: Insight) => {
+    let content = insight.body;
+    let coverImage: string | undefined;
+    let tags: string[] | undefined;
+    
+    try {
+      const parsed = JSON.parse(insight.body);
+      if (parsed.content) {
+        content = parsed.content;
+        coverImage = parsed.metadata?.coverImage;
+        tags = parsed.metadata?.tags;
+      }
+    } catch {
+      // Body is plain text
+    }
+    
+    return { ...insight, content, coverImage, tags };
+  };
+
+  // 示例帖子（当没有真实帖子时显示）
+  const sampleInsights = [
+    { id: "sample-1", title: "为什么我在 1.06 放弃了 Tatum", author: "@shuyang", heat: 238, createdAt: Date.now() - 86400000 },
+    { id: "sample-2", title: "拍卖联赛：别追稀缺叙事", author: "@ivy", heat: 154, createdAt: Date.now() - 172800000 },
+    { id: "sample-3", title: "Defense wins: lock stable minutes first", author: "@coachk", heat: 91, createdAt: Date.now() - 259200000 },
   ];
 
-  const leagues = [
-    { slug: "lebron-lab", name: "LeBron Lab", owner: "@shuyang", watching: 238, phase: "Drafting", teams: 12 },
-    { slug: "auction-chaos", name: "Auction Chaos", owner: "@ivy", watching: 154, phase: "Completed", teams: 14 },
-    { slug: "defense-wins", name: "Defense Wins", owner: "@coachk", watching: 91, phase: "Pre-draft", teams: 10 },
-    { slug: "booth-ballers", name: "Booth 球友会", owner: "@mif", watching: 62, phase: "In-season", teams: 12 },
+  // 示例联赛
+  const sampleLeagues = [
+    { id: "sample-l1", slug: "lebron-lab", name: "LeBron Lab", ownerId: "1", visibility: "public" as const, createdAt: Date.now() - 86400000 },
+    { id: "sample-l2", slug: "auction-chaos", name: "Auction Chaos", ownerId: "2", visibility: "public" as const, createdAt: Date.now() - 172800000 },
   ];
+
+  const displayInsights = insights.length > 0 ? insights : sampleInsights;
+  const displayLeagues = leagues.length > 0 ? leagues : sampleLeagues;
+
+  const formatDate = (timestamp: number) => {
+    const now = Date.now();
+    const diff = now - timestamp;
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    
+    if (hours < 1) return t("刚刚", "Just now");
+    if (hours < 24) return `${hours} ${t("小时前", "hours ago")}`;
+    if (days < 7) return `${days} ${t("天前", "days ago")}`;
+    return new Date(timestamp).toLocaleDateString();
+  };
 
   const handleAction = (action: string) => {
     if (!authed && action !== "mock") {
@@ -95,7 +138,7 @@ export default function HomePage() {
         </section>
       )}
 
-      {/* Content Tabs - UI 翻译 */}
+      {/* Content Tabs */}
       <nav className="tabs-bar">
         <div className="tabs-inner">
           <div className="tabs-left">
@@ -113,50 +156,75 @@ export default function HomePage() {
       <main className="main">
         <div className="container">
           <div className="grid">
-            {/* Feed - 内容保持原样 */}
+            {/* Feed */}
             <section className="feed">
               {topTab === "insights" ? (
-                insights.map((item) => (
-                  <article key={item.id} className="card">
-                    <div className="card-thumb">
-                      <span className="card-heat">🔥 {item.heat}</span>
-                    </div>
-                    <div className="card-body">
-                      <h3 className="card-title">{item.title}</h3>
-                      <div className="card-meta">
-                        <span className="meta-tag">{item.leagueName}</span>
-                        <span>{item.author}</span>
-                      </div>
-                      <div className="card-footer">
-                        <span className="watching">{item.watching} {t("人在看", "watching")}</span>
-                        <Link className="card-link" href={`/insights/${item.id}`}>{t("查看", "View")} →</Link>
-                      </div>
-                    </div>
-                  </article>
-                ))
+                displayInsights.length === 0 ? (
+                  <div className="empty-feed">
+                    <p>{t("还没有帖子，成为第一个发帖的人吧！", "No posts yet. Be the first to post!")}</p>
+                    <Link href="/insights/new" className="btn btn-primary">{t("发布帖子", "Create Post")}</Link>
+                  </div>
+                ) : (
+                  displayInsights.map((item) => {
+                    const parsed = parseInsight(item as Insight);
+                    return (
+                      <article key={item.id} className="card">
+                        <div 
+                          className="card-thumb"
+                          style={parsed.coverImage ? { 
+                            backgroundImage: `url(${parsed.coverImage})`,
+                            backgroundSize: 'cover',
+                            backgroundPosition: 'center'
+                          } : undefined}
+                        >
+                          <span className="card-heat">🔥 {item.heat || 0}</span>
+                        </div>
+                        <div className="card-body">
+                          <h3 className="card-title">{item.title}</h3>
+                          <div className="card-meta">
+                            {parsed.tags && parsed.tags.length > 0 && (
+                              <span className="meta-tag">#{parsed.tags[0]}</span>
+                            )}
+                            <span>{item.author}</span>
+                          </div>
+                          <div className="card-footer">
+                            <span className="watching">{formatDate(item.createdAt)}</span>
+                            <Link className="card-link" href={`/insights/${item.id}`}>{t("查看", "View")} →</Link>
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })
+                )
               ) : (
-                leagues.map((item) => (
-                  <article key={item.slug} className="card">
-                    <div className="card-thumb league-thumb">
-                      <span className="league-teams">{item.teams} {t("队", "teams")}</span>
-                    </div>
-                    <div className="card-body">
-                      <h3 className="card-title">{item.name}</h3>
-                      <div className="card-meta">
-                        <span className="phase-tag">{item.phase}</span>
-                        <span>{item.owner}</span>
+                displayLeagues.length === 0 ? (
+                  <div className="empty-feed">
+                    <p>{t("还没有联赛，创建第一个吧！", "No leagues yet. Create the first one!")}</p>
+                    <Link href="/league/new" className="btn btn-primary">{t("创建联赛", "Create League")}</Link>
+                  </div>
+                ) : (
+                  displayLeagues.map((item) => (
+                    <article key={item.id} className="card">
+                      <div className="card-thumb league-thumb">
+                        <span className="league-teams">12 {t("队", "teams")}</span>
                       </div>
-                      <div className="card-footer">
-                        <span className="watching">{item.watching} {t("人在看", "watching")}</span>
-                        <Link className="card-link" href={`/league/${item.slug}`}>{t("查看", "View")} →</Link>
+                      <div className="card-body">
+                        <h3 className="card-title">{item.name}</h3>
+                        <div className="card-meta">
+                          <span className="phase-tag">{item.visibility === "public" ? t("公开", "Public") : t("私人", "Private")}</span>
+                        </div>
+                        <div className="card-footer">
+                          <span className="watching">{formatDate(item.createdAt)}</span>
+                          <Link className="card-link" href={`/league/${item.slug}`}>{t("查看", "View")} →</Link>
+                        </div>
                       </div>
-                    </div>
-                  </article>
-                ))
+                    </article>
+                  ))
+                )
               )}
             </section>
 
-            {/* Sidebar - UI 翻译 */}
+            {/* Sidebar */}
             <aside className="sidebar">
               <div className="widget">
                 <h4 className="widget-title">{t("快速开始", "Get Started")}</h4>
@@ -169,14 +237,14 @@ export default function HomePage() {
               </div>
 
               <div className="widget">
-                <h4 className="widget-title">{t("本周之星", "Top This Week")}</h4>
+                <h4 className="widget-title">{t("热门作者", "Top Authors")}</h4>
                 <div className="leaderboard">
                   <div className="leader-item">
                     <span className="leader-rank gold">1</span>
                     <div className="leader-avatar">S</div>
                     <div className="leader-info">
                       <span className="leader-name">@shuyang</span>
-                      <span className="leader-stat">2,340 pts</span>
+                      <span className="leader-stat">12 {t("篇帖子", "posts")}</span>
                     </div>
                   </div>
                   <div className="leader-item">
@@ -184,7 +252,7 @@ export default function HomePage() {
                     <div className="leader-avatar">I</div>
                     <div className="leader-info">
                       <span className="leader-name">@ivy</span>
-                      <span className="leader-stat">2,180 pts</span>
+                      <span className="leader-stat">8 {t("篇帖子", "posts")}</span>
                     </div>
                   </div>
                   <div className="leader-item">
@@ -192,9 +260,21 @@ export default function HomePage() {
                     <div className="leader-avatar">C</div>
                     <div className="leader-info">
                       <span className="leader-name">@coachk</span>
-                      <span className="leader-stat">1,950 pts</span>
+                      <span className="leader-stat">5 {t("篇帖子", "posts")}</span>
                     </div>
                   </div>
+                </div>
+              </div>
+
+              {/* 热门标签 */}
+              <div className="widget">
+                <h4 className="widget-title">{t("热门标签", "Trending Tags")}</h4>
+                <div className="trending-tags">
+                  <Link href="#" className="trending-tag">#选秀策略</Link>
+                  <Link href="#" className="trending-tag">#球员分析</Link>
+                  <Link href="#" className="trending-tag">#交易建议</Link>
+                  <Link href="#" className="trending-tag">#Punt策略</Link>
+                  <Link href="#" className="trending-tag">#新手指南</Link>
                 </div>
               </div>
             </aside>
