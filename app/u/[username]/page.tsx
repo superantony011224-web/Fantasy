@@ -23,11 +23,11 @@ const ALL_BADGES: Badge[] = [
   { id: "veteran", name: "资深玩家", nameEn: "Veteran", icon: "⭐", description: "参与超过5个联赛", descriptionEn: "Joined 5+ leagues", color: "#8b5cf6" },
   { id: "champion", name: "冠军", nameEn: "Champion", icon: "👑", description: "赢得联赛冠军", descriptionEn: "Won a league championship", color: "#eab308" },
   { id: "analyst", name: "分析师", nameEn: "Analyst", icon: "📊", description: "帖子获得100+点赞", descriptionEn: "Posts received 100+ likes", color: "#3b82f6" },
-  { id: "rookie", name: "新秀", nameEn: "Rookie", icon: "🌟", description: "完成首次选秀", descriptionEn: "Completed first draft", color: "#22c55e" },
+  { id: "rookie", name: "新秀", nameEn: "Rookie", icon: "🌟", description: "发布首篇帖子", descriptionEn: "Published first post", color: "#22c55e" },
   { id: "social", name: "社交达人", nameEn: "Social Star", icon: "💬", description: "评论超过50条", descriptionEn: "Posted 50+ comments", color: "#ec4899" },
 ];
 
-// 模拟选秀历史数据
+// 选秀历史类型
 type DraftHistory = {
   id: string;
   leagueName: string;
@@ -80,46 +80,95 @@ export default function UserProfilePage() {
     
     // 加载联赛
     const allLeagues = listLeagues();
+    let userOwnedLeagues: League[] = [];
     if (user && isOwn) {
-      const userOwnedLeagues = allLeagues.filter(l => l.ownerId === user.id);
+      userOwnedLeagues = allLeagues.filter(l => l.ownerId === user.id);
       setUserLeagues(userOwnedLeagues);
     }
     
-    // 计算统计数据
+    // 计算真实统计数据
     const totalLikes = filtered.reduce((sum, i) => sum + (i.heat || 0), 0);
+    
+    // 从 localStorage 读取真实的评论数
+    const allComments = JSON.parse(localStorage.getItem("bp_comments") || "[]");
+    const userComments = allComments.filter((c: any) => {
+      const commentAuthor = c.author?.replace("@", "").toLowerCase();
+      return commentAuthor === username.toLowerCase();
+    });
+    
+    // 从 localStorage 读取选秀历史
+    const savedDrafts = JSON.parse(localStorage.getItem(`bp_drafts_${username}`) || "[]");
+    setDraftHistory(savedDrafts);
+    
+    // 从 localStorage 读取冠军数
+    const championships = JSON.parse(localStorage.getItem(`bp_championships_${username}`) || "[]");
+    
     setStats({
       totalPosts: filtered.length,
       totalLikes,
-      totalComments: Math.floor(Math.random() * 50), // 模拟数据
-      leaguesJoined: allLeagues.filter(l => user && l.ownerId === user.id).length,
-      leaguesWon: Math.floor(Math.random() * 2),
-      draftsCompleted: Math.floor(Math.random() * 5) + 1,
+      totalComments: userComments.length,
+      leaguesJoined: userOwnedLeagues.length,
+      leaguesWon: championships.length,
+      draftsCompleted: savedDrafts.length,
     });
     
-    // 计算徽章
+    // 根据真实数据计算徽章
     const badges: Badge[] = [];
-    if (filtered.length >= 1) badges.push(ALL_BADGES.find(b => b.id === "rookie")!);
-    if (filtered.length >= 10) badges.push(ALL_BADGES.find(b => b.id === "expert")!);
-    if (totalLikes >= 100) badges.push(ALL_BADGES.find(b => b.id === "analyst")!);
-    if (allLeagues.length >= 5) badges.push(ALL_BADGES.find(b => b.id === "veteran")!);
+    
+    // 新秀徽章 - 发布过至少1篇帖子
+    if (filtered.length >= 1) {
+      badges.push(ALL_BADGES.find(b => b.id === "rookie")!);
+    }
+    
+    // 专家认证 - 发布超过10篇帖子
+    if (filtered.length >= 10) {
+      badges.push(ALL_BADGES.find(b => b.id === "expert")!);
+    }
+    
+    // 分析师徽章 - 帖子获得100+点赞
+    if (totalLikes >= 100) {
+      badges.push(ALL_BADGES.find(b => b.id === "analyst")!);
+    }
+    
+    // 资深玩家 - 参与超过5个联赛
+    if (userOwnedLeagues.length >= 5) {
+      badges.push(ALL_BADGES.find(b => b.id === "veteran")!);
+    }
+    
+    // 社交达人 - 评论超过50条
+    if (userComments.length >= 50) {
+      badges.push(ALL_BADGES.find(b => b.id === "social")!);
+    }
+    
+    // 冠军徽章 - 赢得过联赛冠军
+    if (championships.length > 0) {
+      badges.push(ALL_BADGES.find(b => b.id === "champion")!);
+    }
+    
     setUserBadges(badges.filter(Boolean));
     
-    // 模拟选秀历史
-    setDraftHistory([
-      { id: "d1", leagueName: "Blueprint Pro League", season: "2024-25", result: "进行中", rank: 3, totalTeams: 12, date: Date.now() - 86400000 * 7 },
-      { id: "d2", leagueName: "Fantasy Masters", season: "2023-24", result: "第2名", rank: 2, totalTeams: 10, date: Date.now() - 86400000 * 180 },
-      { id: "d3", leagueName: "Rookie League", season: "2023-24", result: "冠军 🏆", rank: 1, totalTeams: 8, date: Date.now() - 86400000 * 200 },
-    ]);
+    // 计算真实粉丝数 - 遍历所有用户的 following 列表
+    let realFollowers = 0;
+    // 这里简化处理，从当前用户的 localStorage 检查
+    // 实际生产环境应该有后端数据库
+    const followersKey = `bp_followers_${username}`;
+    const savedFollowers = JSON.parse(localStorage.getItem(followersKey) || "[]");
+    realFollowers = savedFollowers.length;
+    setFollowersCount(realFollowers);
     
-    // 检查关注状态
+    // 计算关注数
+    let realFollowing = 0;
+    if (user && isOwn) {
+      const followingList = JSON.parse(localStorage.getItem(`bp_following_${user.id}`) || "[]");
+      realFollowing = followingList.length;
+    }
+    setFollowingCount(realFollowing);
+    
+    // 检查当前用户是否关注了该用户
     if (user && !isOwn) {
       const following = JSON.parse(localStorage.getItem(`bp_following_${user.id}`) || "[]");
       setIsFollowing(following.includes(username) || following.includes(`@${username}`));
     }
-    
-    // 模拟粉丝数
-    setFollowersCount(Math.floor(Math.random() * 100) + filtered.length * 5);
-    setFollowingCount(Math.floor(Math.random() * 50));
   };
 
   useEffect(() => {
@@ -151,17 +200,26 @@ export default function UserProfilePage() {
       return;
     }
     
-    const key = `bp_following_${currentUser.id}`;
-    const following = JSON.parse(localStorage.getItem(key) || "[]");
+    const followingKey = `bp_following_${currentUser.id}`;
+    const followersKey = `bp_followers_${username}`;
+    
+    const following = JSON.parse(localStorage.getItem(followingKey) || "[]");
+    const followers = JSON.parse(localStorage.getItem(followersKey) || "[]");
     
     if (isFollowing) {
+      // 取消关注
       const newFollowing = following.filter((name: string) => name !== username && name !== `@${username}`);
-      localStorage.setItem(key, JSON.stringify(newFollowing));
+      const newFollowers = followers.filter((id: string) => id !== currentUser.id);
+      localStorage.setItem(followingKey, JSON.stringify(newFollowing));
+      localStorage.setItem(followersKey, JSON.stringify(newFollowers));
       setIsFollowing(false);
-      setFollowersCount(prev => prev - 1);
+      setFollowersCount(prev => Math.max(0, prev - 1));
     } else {
+      // 关注
       following.push(username);
-      localStorage.setItem(key, JSON.stringify(following));
+      followers.push(currentUser.id);
+      localStorage.setItem(followingKey, JSON.stringify(following));
+      localStorage.setItem(followersKey, JSON.stringify(followers));
       setIsFollowing(true);
       setFollowersCount(prev => prev + 1);
     }
@@ -254,7 +312,7 @@ export default function UserProfilePage() {
           </div>
         </div>
 
-        {/* Badges Section */}
+        {/* Badges Section - 只有有徽章时才显示 */}
         {userBadges.length > 0 && (
           <div className="badges-section">
             <h3 className="section-title">{t("徽章", "Badges")}</h3>
@@ -290,7 +348,7 @@ export default function UserProfilePage() {
             className={`tab-btn ${activeTab === "drafts" ? "active" : ""}`}
             onClick={() => setActiveTab("drafts")}
           >
-            {t("选秀历史", "Draft History")}
+            {t("选秀历史", "Draft History")} ({draftHistory.length})
           </button>
           <button 
             className={`tab-btn ${activeTab === "stats" ? "active" : ""}`}
@@ -307,6 +365,7 @@ export default function UserProfilePage() {
             <div>
               {userInsights.length === 0 ? (
                 <div className="empty-state">
+                  <div className="empty-icon">📝</div>
                   <p>{isOwnProfile ? t("你还没有发布任何帖子", "You haven't posted anything yet") : t("该用户还没有发布帖子", "This user hasn't posted anything yet")}</p>
                   {isOwnProfile && (
                     <Link href="/insights/new" className="btn btn-primary">{t("发布第一篇帖子", "Create Your First Post")}</Link>
@@ -357,6 +416,7 @@ export default function UserProfilePage() {
               )}
               {userLeagues.length === 0 ? (
                 <div className="empty-state">
+                  <div className="empty-icon">🏀</div>
                   <p>{isOwnProfile ? t("你还没有创建任何联赛", "You haven't created any leagues") : t("该用户还没有联赛", "This user has no leagues")}</p>
                   {isOwnProfile && (
                     <Link href="/league/new" className="btn btn-primary">{t("创建联赛", "Create League")}</Link>
@@ -396,7 +456,9 @@ export default function UserProfilePage() {
             <div>
               {draftHistory.length === 0 ? (
                 <div className="empty-state">
+                  <div className="empty-icon">��</div>
                   <p>{t("还没有选秀记录", "No draft history yet")}</p>
+                  <p className="empty-hint">{t("完成联赛选秀后，记录会显示在这里", "Complete a league draft to see your history here")}</p>
                   <Link href="/mock-draft" className="btn btn-primary">{t("开始模拟选秀", "Start Mock Draft")}</Link>
                 </div>
               ) : (
@@ -654,9 +716,17 @@ export default function UserProfilePage() {
           padding: 60px 20px;
           text-align: center;
         }
+        .empty-icon {
+          font-size: 48px;
+          margin-bottom: 16px;
+        }
         .empty-state p {
           color: var(--text-muted);
-          margin-bottom: 20px;
+          margin-bottom: 8px;
+        }
+        .empty-hint {
+          font-size: 14px;
+          margin-bottom: 20px !important;
         }
         .posts-grid {
           display: grid;
