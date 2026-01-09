@@ -7,6 +7,37 @@ import Header from "@/components/Header";
 import { useLang } from "@/lib/lang";
 import { getSessionUser, listLeagues, listInsights, League, Insight } from "@/lib/store";
 
+// 徽章类型定义
+type Badge = {
+  id: string;
+  name: string;
+  nameEn: string;
+  icon: string;
+  description: string;
+  descriptionEn: string;
+  color: string;
+};
+
+const ALL_BADGES: Badge[] = [
+  { id: "expert", name: "专家认证", nameEn: "Expert", icon: "🏆", description: "发布超过10篇高质量分析", descriptionEn: "Published 10+ quality analyses", color: "#f59e0b" },
+  { id: "veteran", name: "资深玩家", nameEn: "Veteran", icon: "⭐", description: "参与超过5个联赛", descriptionEn: "Joined 5+ leagues", color: "#8b5cf6" },
+  { id: "champion", name: "冠军", nameEn: "Champion", icon: "👑", description: "赢得联赛冠军", descriptionEn: "Won a league championship", color: "#eab308" },
+  { id: "analyst", name: "分析师", nameEn: "Analyst", icon: "📊", description: "帖子获得100+点赞", descriptionEn: "Posts received 100+ likes", color: "#3b82f6" },
+  { id: "rookie", name: "新秀", nameEn: "Rookie", icon: "🌟", description: "完成首次选秀", descriptionEn: "Completed first draft", color: "#22c55e" },
+  { id: "social", name: "社交达人", nameEn: "Social Star", icon: "💬", description: "评论超过50条", descriptionEn: "Posted 50+ comments", color: "#ec4899" },
+];
+
+// 模拟选秀历史数据
+type DraftHistory = {
+  id: string;
+  leagueName: string;
+  season: string;
+  result: string;
+  rank: number;
+  totalTeams: number;
+  date: number;
+};
+
 export default function UserProfilePage() {
   const { t } = useLang();
   const params = useParams();
@@ -14,10 +45,23 @@ export default function UserProfilePage() {
   const username = params.username as string;
   const [currentUser, setCurrentUser] = useState<ReturnType<typeof getSessionUser>>(null);
   const [isOwnProfile, setIsOwnProfile] = useState(false);
-  const [activeTab, setActiveTab] = useState<"posts" | "leagues">("posts");
+  const [activeTab, setActiveTab] = useState<"posts" | "leagues" | "drafts" | "stats">("posts");
   const [userLeagues, setUserLeagues] = useState<League[]>([]);
   const [userInsights, setUserInsights] = useState<Insight[]>([]);
   const [showDeleteModal, setShowDeleteModal] = useState<string | null>(null);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followersCount, setFollowersCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
+  const [userBadges, setUserBadges] = useState<Badge[]>([]);
+  const [draftHistory, setDraftHistory] = useState<DraftHistory[]>([]);
+  const [stats, setStats] = useState({
+    totalPosts: 0,
+    totalLikes: 0,
+    totalComments: 0,
+    leaguesJoined: 0,
+    leaguesWon: 0,
+    draftsCompleted: 0,
+  });
 
   const loadData = () => {
     const user = getSessionUser();
@@ -26,6 +70,7 @@ export default function UserProfilePage() {
     const isOwn = user && user.username === username;
     setIsOwnProfile(!!isOwn);
     
+    // 加载帖子
     const allInsights = listInsights();
     const filtered = allInsights.filter(i => {
       const authorName = i.author.replace("@", "").toLowerCase();
@@ -33,11 +78,48 @@ export default function UserProfilePage() {
     });
     setUserInsights(filtered.sort((a, b) => b.createdAt - a.createdAt));
     
+    // 加载联赛
+    const allLeagues = listLeagues();
     if (user && isOwn) {
-      const allLeagues = listLeagues();
       const userOwnedLeagues = allLeagues.filter(l => l.ownerId === user.id);
       setUserLeagues(userOwnedLeagues);
     }
+    
+    // 计算统计数据
+    const totalLikes = filtered.reduce((sum, i) => sum + (i.heat || 0), 0);
+    setStats({
+      totalPosts: filtered.length,
+      totalLikes,
+      totalComments: Math.floor(Math.random() * 50), // 模拟数据
+      leaguesJoined: allLeagues.filter(l => user && l.ownerId === user.id).length,
+      leaguesWon: Math.floor(Math.random() * 2),
+      draftsCompleted: Math.floor(Math.random() * 5) + 1,
+    });
+    
+    // 计算徽章
+    const badges: Badge[] = [];
+    if (filtered.length >= 1) badges.push(ALL_BADGES.find(b => b.id === "rookie")!);
+    if (filtered.length >= 10) badges.push(ALL_BADGES.find(b => b.id === "expert")!);
+    if (totalLikes >= 100) badges.push(ALL_BADGES.find(b => b.id === "analyst")!);
+    if (allLeagues.length >= 5) badges.push(ALL_BADGES.find(b => b.id === "veteran")!);
+    setUserBadges(badges.filter(Boolean));
+    
+    // 模拟选秀历史
+    setDraftHistory([
+      { id: "d1", leagueName: "Blueprint Pro League", season: "2024-25", result: "进行中", rank: 3, totalTeams: 12, date: Date.now() - 86400000 * 7 },
+      { id: "d2", leagueName: "Fantasy Masters", season: "2023-24", result: "第2名", rank: 2, totalTeams: 10, date: Date.now() - 86400000 * 180 },
+      { id: "d3", leagueName: "Rookie League", season: "2023-24", result: "冠军 🏆", rank: 1, totalTeams: 8, date: Date.now() - 86400000 * 200 },
+    ]);
+    
+    // 检查关注状态
+    if (user && !isOwn) {
+      const following = JSON.parse(localStorage.getItem(`bp_following_${user.id}`) || "[]");
+      setIsFollowing(following.includes(username) || following.includes(`@${username}`));
+    }
+    
+    // 模拟粉丝数
+    setFollowersCount(Math.floor(Math.random() * 100) + filtered.length * 5);
+    setFollowingCount(Math.floor(Math.random() * 50));
   };
 
   useEffect(() => {
@@ -63,22 +145,41 @@ export default function UserProfilePage() {
     return { ...insight, coverImage, tags };
   };
 
+  const handleFollow = () => {
+    if (!currentUser) {
+      alert(t("请先登录", "Please login first"));
+      return;
+    }
+    
+    const key = `bp_following_${currentUser.id}`;
+    const following = JSON.parse(localStorage.getItem(key) || "[]");
+    
+    if (isFollowing) {
+      const newFollowing = following.filter((name: string) => name !== username && name !== `@${username}`);
+      localStorage.setItem(key, JSON.stringify(newFollowing));
+      setIsFollowing(false);
+      setFollowersCount(prev => prev - 1);
+    } else {
+      following.push(username);
+      localStorage.setItem(key, JSON.stringify(following));
+      setIsFollowing(true);
+      setFollowersCount(prev => prev + 1);
+    }
+  };
+
   const handleDeleteLeague = (leagueId: string) => {
     const allLeagues = JSON.parse(localStorage.getItem("bp_leagues") || "[]");
     const filtered = allLeagues.filter((l: League) => l.id !== leagueId);
     localStorage.setItem("bp_leagues", JSON.stringify(filtered));
     setShowDeleteModal(null);
-    loadData(); // 刷新数据
+    loadData();
   };
 
   const handleDeleteAllDuplicates = () => {
     const allLeagues = JSON.parse(localStorage.getItem("bp_leagues") || "[]");
-    // 按名称分组，每个名称只保留一个
     const seen = new Set<string>();
     const filtered = allLeagues.filter((l: League) => {
-      if (seen.has(l.name)) {
-        return false;
-      }
+      if (seen.has(l.name)) return false;
       seen.add(l.name);
       return true;
     });
@@ -94,208 +195,295 @@ export default function UserProfilePage() {
 
       <main className="page-content">
         {/* Profile Header */}
-        <div style={{ display: "flex", alignItems: "center", gap: 24, marginBottom: 32 }}>
-          <div style={{ 
-            width: 80, 
-            height: 80, 
-            borderRadius: "50%", 
-            background: "linear-gradient(135deg, #f59e0b, #d97706)", 
-            display: "flex", 
-            alignItems: "center", 
-            justifyContent: "center",
-            fontSize: 32,
-            fontWeight: 700,
-            color: "#000"
-          }}>
-            {username[0]?.toUpperCase()}
+        <div className="profile-header">
+          <div className="profile-main">
+            <div className="avatar-section">
+              <div className="avatar">
+                {username[0]?.toUpperCase()}
+              </div>
+              {userBadges.length > 0 && (
+                <div className="primary-badge" style={{ background: userBadges[0].color }}>
+                  {userBadges[0].icon}
+                </div>
+              )}
+            </div>
+            
+            <div className="profile-info">
+              <div className="name-row">
+                <h1 className="username">@{username}</h1>
+                {userBadges.length > 0 && (
+                  <span className="verified-badge" title={t(userBadges[0].name, userBadges[0].nameEn)}>
+                    ✓
+                  </span>
+                )}
+              </div>
+              <p className="bio">
+                {isOwnProfile ? t("这是你的个人主页", "This is your profile") : t("Fantasy 篮球玩家", "Fantasy Basketball Player")}
+              </p>
+              
+              {/* Stats Row */}
+              <div className="stats-row">
+                <div className="stat-item">
+                  <span className="stat-value">{stats.totalPosts}</span>
+                  <span className="stat-label">{t("帖子", "Posts")}</span>
+                </div>
+                <div className="stat-item">
+                  <span className="stat-value">{followersCount}</span>
+                  <span className="stat-label">{t("粉丝", "Followers")}</span>
+                </div>
+                <div className="stat-item">
+                  <span className="stat-value">{followingCount}</span>
+                  <span className="stat-label">{t("关注", "Following")}</span>
+                </div>
+              </div>
+            </div>
           </div>
-          <div>
-            <h1 className="page-title" style={{ marginBottom: 4 }}>@{username}</h1>
-            <p style={{ color: "var(--text-muted)" }}>
-              {isOwnProfile ? t("这是你的个人主页", "This is your profile") : t("用户主页", "User Profile")}
-            </p>
+          
+          {/* Action Buttons */}
+          <div className="profile-actions">
+            {isOwnProfile ? (
+              <button className="btn btn-ghost">{t("编辑资料", "Edit Profile")}</button>
+            ) : (
+              <button 
+                className={`btn ${isFollowing ? "btn-ghost" : "btn-primary"}`}
+                onClick={handleFollow}
+              >
+                {isFollowing ? t("已关注", "Following") : t("关注", "Follow")}
+              </button>
+            )}
           </div>
         </div>
 
+        {/* Badges Section */}
+        {userBadges.length > 0 && (
+          <div className="badges-section">
+            <h3 className="section-title">{t("徽章", "Badges")}</h3>
+            <div className="badges-grid">
+              {userBadges.map(badge => (
+                <div key={badge.id} className="badge-item" style={{ borderColor: badge.color }}>
+                  <span className="badge-icon">{badge.icon}</span>
+                  <div className="badge-info">
+                    <span className="badge-name" style={{ color: badge.color }}>{t(badge.name, badge.nameEn)}</span>
+                    <span className="badge-desc">{t(badge.description, badge.descriptionEn)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Tabs */}
-        <div style={{ display: "flex", gap: 8, marginBottom: 24, alignItems: "center" }}>
+        <div className="tabs-container">
           <button 
-            className={`toggle-btn ${activeTab === "posts" ? "active" : ""}`}
+            className={`tab-btn ${activeTab === "posts" ? "active" : ""}`}
             onClick={() => setActiveTab("posts")}
           >
             {t("帖子", "Posts")} ({userInsights.length})
           </button>
           <button 
-            className={`toggle-btn ${activeTab === "leagues" ? "active" : ""}`}
+            className={`tab-btn ${activeTab === "leagues" ? "active" : ""}`}
             onClick={() => setActiveTab("leagues")}
           >
             {t("联赛", "Leagues")} ({userLeagues.length})
           </button>
-          
-          {/* 清理重复联赛按钮 */}
-          {isOwnProfile && activeTab === "leagues" && userLeagues.length > 1 && (
-            <button 
-              className="btn btn-ghost" 
-              style={{ marginLeft: "auto", fontSize: 13 }}
-              onClick={handleDeleteAllDuplicates}
-            >
-              {t("清理重复", "Clean Duplicates")}
-            </button>
+          <button 
+            className={`tab-btn ${activeTab === "drafts" ? "active" : ""}`}
+            onClick={() => setActiveTab("drafts")}
+          >
+            {t("选秀历史", "Draft History")}
+          </button>
+          <button 
+            className={`tab-btn ${activeTab === "stats" ? "active" : ""}`}
+            onClick={() => setActiveTab("stats")}
+          >
+            {t("战绩统计", "Stats")}
+          </button>
+        </div>
+
+        {/* Tab Content */}
+        <div className="tab-content">
+          {/* Posts Tab */}
+          {activeTab === "posts" && (
+            <div>
+              {userInsights.length === 0 ? (
+                <div className="empty-state">
+                  <p>{isOwnProfile ? t("你还没有发布任何帖子", "You haven't posted anything yet") : t("该用户还没有发布帖子", "This user hasn't posted anything yet")}</p>
+                  {isOwnProfile && (
+                    <Link href="/insights/new" className="btn btn-primary">{t("发布第一篇帖子", "Create Your First Post")}</Link>
+                  )}
+                </div>
+              ) : (
+                <div className="posts-grid">
+                  {userInsights.map(insight => {
+                    const parsed = parseInsight(insight);
+                    return (
+                      <Link key={insight.id} href={`/insights/${insight.id}`} className="post-card">
+                        <div 
+                          className="post-cover"
+                          style={{
+                            backgroundImage: parsed.coverImage 
+                              ? `url(${parsed.coverImage})`
+                              : "linear-gradient(135deg, #1e293b, #334155)"
+                          }}
+                        >
+                          <span className="post-heat">🔥 {insight.heat}</span>
+                        </div>
+                        <div className="post-info">
+                          <h3 className="post-title">{insight.title}</h3>
+                          <div className="post-meta">
+                            <span>{formatDate(insight.createdAt)}</span>
+                            {parsed.tags && parsed.tags[0] && (
+                              <span className="post-tag">#{parsed.tags[0]}</span>
+                            )}
+                          </div>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Leagues Tab */}
+          {activeTab === "leagues" && (
+            <div>
+              {isOwnProfile && userLeagues.length > 1 && (
+                <div style={{ marginBottom: 16, textAlign: "right" }}>
+                  <button className="btn btn-ghost btn-sm" onClick={handleDeleteAllDuplicates}>
+                    {t("清理重复", "Clean Duplicates")}
+                  </button>
+                </div>
+              )}
+              {userLeagues.length === 0 ? (
+                <div className="empty-state">
+                  <p>{isOwnProfile ? t("你还没有创建任何联赛", "You haven't created any leagues") : t("该用户还没有联赛", "This user has no leagues")}</p>
+                  {isOwnProfile && (
+                    <Link href="/league/new" className="btn btn-primary">{t("创建联赛", "Create League")}</Link>
+                  )}
+                </div>
+              ) : (
+                <div className="leagues-list">
+                  {userLeagues.map(league => (
+                    <div key={league.id} className="league-card">
+                      <Link href={`/league/${league.slug}`} className="league-info">
+                        <div className="league-icon">🏀</div>
+                        <div>
+                          <h3 className="league-name">{league.name}</h3>
+                          <div className="league-meta">
+                            <span className="league-visibility">{league.visibility === "public" ? t("公开", "Public") : t("私人", "Private")}</span>
+                            <span>{formatDate(league.createdAt)}</span>
+                          </div>
+                        </div>
+                      </Link>
+                      {isOwnProfile && (
+                        <button 
+                          className="delete-btn"
+                          onClick={() => setShowDeleteModal(league.id)}
+                        >
+                          🗑️
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Draft History Tab */}
+          {activeTab === "drafts" && (
+            <div>
+              {draftHistory.length === 0 ? (
+                <div className="empty-state">
+                  <p>{t("还没有选秀记录", "No draft history yet")}</p>
+                  <Link href="/mock-draft" className="btn btn-primary">{t("开始模拟选秀", "Start Mock Draft")}</Link>
+                </div>
+              ) : (
+                <div className="drafts-list">
+                  {draftHistory.map(draft => (
+                    <div key={draft.id} className="draft-card">
+                      <div className="draft-rank" style={{ 
+                        background: draft.rank === 1 ? "#eab308" : draft.rank === 2 ? "#94a3b8" : draft.rank === 3 ? "#cd7f32" : "var(--bg-secondary)"
+                      }}>
+                        #{draft.rank}
+                      </div>
+                      <div className="draft-info">
+                        <h3 className="draft-league">{draft.leagueName}</h3>
+                        <div className="draft-meta">
+                          <span>{draft.season}</span>
+                          <span>•</span>
+                          <span>{draft.totalTeams} {t("队伍", "teams")}</span>
+                        </div>
+                      </div>
+                      <div className="draft-result" style={{
+                        color: draft.rank === 1 ? "#eab308" : "var(--text-primary)"
+                      }}>
+                        {draft.result}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Stats Tab */}
+          {activeTab === "stats" && (
+            <div className="stats-grid">
+              <div className="stat-card">
+                <div className="stat-icon">📝</div>
+                <div className="stat-content">
+                  <span className="stat-number">{stats.totalPosts}</span>
+                  <span className="stat-label">{t("发布帖子", "Posts Published")}</span>
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-icon">❤️</div>
+                <div className="stat-content">
+                  <span className="stat-number">{stats.totalLikes}</span>
+                  <span className="stat-label">{t("获得点赞", "Likes Received")}</span>
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-icon">💬</div>
+                <div className="stat-content">
+                  <span className="stat-number">{stats.totalComments}</span>
+                  <span className="stat-label">{t("发表评论", "Comments Made")}</span>
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-icon">🏀</div>
+                <div className="stat-content">
+                  <span className="stat-number">{stats.leaguesJoined}</span>
+                  <span className="stat-label">{t("参与联赛", "Leagues Joined")}</span>
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-icon">🏆</div>
+                <div className="stat-content">
+                  <span className="stat-number">{stats.leaguesWon}</span>
+                  <span className="stat-label">{t("联赛冠军", "Championships")}</span>
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-icon">📋</div>
+                <div className="stat-content">
+                  <span className="stat-number">{stats.draftsCompleted}</span>
+                  <span className="stat-label">{t("完成选秀", "Drafts Completed")}</span>
+                </div>
+              </div>
+            </div>
           )}
         </div>
 
-        {/* Content */}
-        {activeTab === "posts" ? (
-          <div>
-            {userInsights.length === 0 ? (
-              <div style={{ background: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: 12, padding: 40, textAlign: "center" }}>
-                <p style={{ color: "var(--text-muted)", marginBottom: 16 }}>
-                  {isOwnProfile ? t("你还没有发布任何帖子", "You haven't posted anything yet") : t("该用户还没有发布帖子", "This user hasn't posted anything yet")}
-                </p>
-                {isOwnProfile && (
-                  <Link href="/insights/new" className="btn btn-primary">{t("发布第一篇帖子", "Create Your First Post")}</Link>
-                )}
-              </div>
-            ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
-                {userInsights.map(insight => {
-                  const parsed = parseInsight(insight);
-                  return (
-                    <Link 
-                      key={insight.id} 
-                      href={`/insights/${insight.id}`} 
-                      style={{ 
-                        background: "var(--bg-card)", 
-                        border: "1px solid var(--border-color)", 
-                        borderRadius: 12, 
-                        overflow: "hidden",
-                        textDecoration: "none",
-                        color: "inherit",
-                        transition: "transform 0.2s, box-shadow 0.2s"
-                      }}
-                    >
-                      <div style={{
-                        height: 140,
-                        background: parsed.coverImage 
-                          ? `url(${parsed.coverImage}) center/cover`
-                          : "linear-gradient(135deg, #1e293b, #334155)"
-                      }}>
-                        <div style={{ padding: 8, display: "flex", justifyContent: "flex-end" }}>
-                          <span style={{ 
-                            background: "rgba(0,0,0,0.6)", 
-                            padding: "4px 8px", 
-                            borderRadius: 12, 
-                            fontSize: 12 
-                          }}>
-                            🔥 {insight.heat}
-                          </span>
-                        </div>
-                      </div>
-                      <div style={{ padding: 16 }}>
-                        <h3 style={{ fontSize: 16, marginBottom: 8, lineHeight: 1.4 }}>{insight.title}</h3>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", color: "var(--text-muted)", fontSize: 13 }}>
-                          <span>{formatDate(insight.createdAt)}</span>
-                          {parsed.tags && parsed.tags[0] && (
-                            <span style={{ color: "var(--accent)" }}>#{parsed.tags[0]}</span>
-                          )}
-                        </div>
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div>
-            {userLeagues.length === 0 ? (
-              <div style={{ background: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: 12, padding: 40, textAlign: "center" }}>
-                <p style={{ color: "var(--text-muted)", marginBottom: 16 }}>
-                  {isOwnProfile ? t("你还没有创建任何联赛", "You haven't created any leagues") : t("该用户还没有联赛", "This user has no leagues")}
-                </p>
-                {isOwnProfile && (
-                  <Link href="/league/new" className="btn btn-primary">{t("创建联赛", "Create League")}</Link>
-                )}
-              </div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                {userLeagues.map(league => (
-                  <div 
-                    key={league.id} 
-                    style={{ 
-                      background: "var(--bg-card)", 
-                      border: "1px solid var(--border-color)", 
-                      borderRadius: 12, 
-                      padding: 20,
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center"
-                    }}
-                  >
-                    <Link 
-                      href={`/league/${league.slug}`}
-                      style={{ flex: 1, textDecoration: "none", color: "inherit" }}
-                    >
-                      <h3 style={{ marginBottom: 4 }}>{league.name}</h3>
-                      <div style={{ display: "flex", gap: 12, color: "var(--text-muted)", fontSize: 14 }}>
-                        <span>{league.visibility === "public" ? t("公开", "Public") : t("私人", "Private")}</span>
-                        <span>{formatDate(league.createdAt)}</span>
-                      </div>
-                    </Link>
-                    {isOwnProfile && (
-                      <button 
-                        onClick={() => setShowDeleteModal(league.id)}
-                        style={{ 
-                          background: "none", 
-                          border: "none", 
-                          cursor: "pointer",
-                          fontSize: 18,
-                          opacity: 0.6,
-                          padding: 8
-                        }}
-                        title={t("删除", "Delete")}
-                      >
-                        🗑️
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Delete Confirmation Modal */}
+        {/* Delete Modal */}
         {showDeleteModal && (
-          <div 
-            style={{
-              position: "fixed",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: "rgba(0,0,0,0.7)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              zIndex: 1000
-            }}
-            onClick={() => setShowDeleteModal(null)}
-          >
-            <div 
-              style={{
-                background: "var(--bg-card)",
-                border: "1px solid var(--border-color)",
-                borderRadius: 12,
-                padding: 24,
-                maxWidth: 400,
-                width: "90%"
-              }}
-              onClick={e => e.stopPropagation()}
-            >
+          <div className="modal-overlay" onClick={() => setShowDeleteModal(null)}>
+            <div className="modal-content" onClick={e => e.stopPropagation()}>
               <h3>{t("确认删除", "Confirm Delete")}</h3>
               <p style={{ color: "var(--text-muted)", margin: "16px 0" }}>
-                {t("确定要删除这个联赛吗？此操作无法撤销。", "Are you sure you want to delete this league? This action cannot be undone.")}
+                {t("确定要删除这个联赛吗？", "Are you sure you want to delete this league?")}
               </p>
               <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
                 <button className="btn btn-ghost" onClick={() => setShowDeleteModal(null)}>
@@ -309,6 +497,385 @@ export default function UserProfilePage() {
           </div>
         )}
       </main>
+
+      <style jsx>{`
+        .profile-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 24px;
+          margin-bottom: 32px;
+          flex-wrap: wrap;
+        }
+        .profile-main {
+          display: flex;
+          gap: 24px;
+          align-items: flex-start;
+        }
+        .avatar-section {
+          position: relative;
+        }
+        .avatar {
+          width: 100px;
+          height: 100px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, #f59e0b, #d97706);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 40px;
+          font-weight: 700;
+          color: #000;
+        }
+        .primary-badge {
+          position: absolute;
+          bottom: 0;
+          right: 0;
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 16px;
+          border: 3px solid var(--bg-primary);
+        }
+        .profile-info {
+          flex: 1;
+        }
+        .name-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 4px;
+        }
+        .username {
+          font-size: 28px;
+          font-weight: 700;
+        }
+        .verified-badge {
+          width: 24px;
+          height: 24px;
+          border-radius: 50%;
+          background: var(--accent);
+          color: #000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 14px;
+          font-weight: 700;
+        }
+        .bio {
+          color: var(--text-muted);
+          margin-bottom: 16px;
+        }
+        .stats-row {
+          display: flex;
+          gap: 24px;
+        }
+        .stat-item {
+          display: flex;
+          flex-direction: column;
+        }
+        .stat-value {
+          font-size: 20px;
+          font-weight: 700;
+        }
+        .stat-label {
+          font-size: 13px;
+          color: var(--text-muted);
+        }
+        .badges-section {
+          margin-bottom: 32px;
+        }
+        .section-title {
+          font-size: 16px;
+          font-weight: 600;
+          margin-bottom: 16px;
+        }
+        .badges-grid {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 12px;
+        }
+        .badge-item {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          background: var(--bg-card);
+          border: 2px solid;
+          border-radius: 12px;
+          padding: 12px 16px;
+        }
+        .badge-icon {
+          font-size: 24px;
+        }
+        .badge-info {
+          display: flex;
+          flex-direction: column;
+        }
+        .badge-name {
+          font-weight: 600;
+          font-size: 14px;
+        }
+        .badge-desc {
+          font-size: 12px;
+          color: var(--text-muted);
+        }
+        .tabs-container {
+          display: flex;
+          gap: 4px;
+          border-bottom: 1px solid var(--border-color);
+          margin-bottom: 24px;
+          overflow-x: auto;
+        }
+        .tab-btn {
+          padding: 12px 20px;
+          background: none;
+          border: none;
+          color: var(--text-muted);
+          font-weight: 500;
+          cursor: pointer;
+          border-bottom: 2px solid transparent;
+          white-space: nowrap;
+          transition: all 0.2s;
+        }
+        .tab-btn:hover {
+          color: var(--text-primary);
+        }
+        .tab-btn.active {
+          color: var(--accent);
+          border-bottom-color: var(--accent);
+        }
+        .empty-state {
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+          padding: 60px 20px;
+          text-align: center;
+        }
+        .empty-state p {
+          color: var(--text-muted);
+          margin-bottom: 20px;
+        }
+        .posts-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+          gap: 20px;
+        }
+        .post-card {
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+          overflow: hidden;
+          text-decoration: none;
+          color: inherit;
+          transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .post-card:hover {
+          transform: translateY(-4px);
+          box-shadow: 0 12px 24px rgba(0,0,0,0.2);
+        }
+        .post-cover {
+          height: 160px;
+          background-size: cover;
+          background-position: center;
+          position: relative;
+        }
+        .post-heat {
+          position: absolute;
+          top: 12px;
+          right: 12px;
+          background: rgba(0,0,0,0.6);
+          padding: 4px 10px;
+          border-radius: 12px;
+          font-size: 13px;
+        }
+        .post-info {
+          padding: 16px;
+        }
+        .post-title {
+          font-size: 16px;
+          font-weight: 600;
+          margin-bottom: 8px;
+          line-height: 1.4;
+        }
+        .post-meta {
+          display: flex;
+          justify-content: space-between;
+          font-size: 13px;
+          color: var(--text-muted);
+        }
+        .post-tag {
+          color: var(--accent);
+        }
+        .leagues-list {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+        .league-card {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+          padding: 16px 20px;
+        }
+        .league-info {
+          display: flex;
+          align-items: center;
+          gap: 16px;
+          text-decoration: none;
+          color: inherit;
+          flex: 1;
+        }
+        .league-icon {
+          width: 48px;
+          height: 48px;
+          border-radius: 12px;
+          background: var(--bg-secondary);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 24px;
+        }
+        .league-name {
+          font-weight: 600;
+          margin-bottom: 4px;
+        }
+        .league-meta {
+          display: flex;
+          gap: 12px;
+          font-size: 13px;
+          color: var(--text-muted);
+        }
+        .league-visibility {
+          color: var(--accent);
+        }
+        .delete-btn {
+          background: none;
+          border: none;
+          font-size: 18px;
+          cursor: pointer;
+          opacity: 0.5;
+          padding: 8px;
+          transition: opacity 0.2s;
+        }
+        .delete-btn:hover {
+          opacity: 1;
+        }
+        .drafts-list {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+        .draft-card {
+          display: flex;
+          align-items: center;
+          gap: 16px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+          padding: 16px 20px;
+        }
+        .draft-rank {
+          width: 48px;
+          height: 48px;
+          border-radius: 12px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 700;
+          font-size: 18px;
+          color: #000;
+        }
+        .draft-info {
+          flex: 1;
+        }
+        .draft-league {
+          font-weight: 600;
+          margin-bottom: 4px;
+        }
+        .draft-meta {
+          display: flex;
+          gap: 8px;
+          font-size: 13px;
+          color: var(--text-muted);
+        }
+        .draft-result {
+          font-weight: 600;
+        }
+        .stats-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+          gap: 16px;
+        }
+        .stat-card {
+          display: flex;
+          align-items: center;
+          gap: 16px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+          padding: 20px;
+        }
+        .stat-icon {
+          width: 48px;
+          height: 48px;
+          border-radius: 12px;
+          background: var(--bg-secondary);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 24px;
+        }
+        .stat-content {
+          display: flex;
+          flex-direction: column;
+        }
+        .stat-number {
+          font-size: 24px;
+          font-weight: 700;
+        }
+        .modal-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0,0,0,0.7);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+        }
+        .modal-content {
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+          padding: 24px;
+          max-width: 400px;
+          width: 90%;
+        }
+        @media (max-width: 640px) {
+          .profile-main {
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+          }
+          .stats-row {
+            justify-content: center;
+          }
+          .profile-actions {
+            width: 100%;
+          }
+          .profile-actions .btn {
+            width: 100%;
+          }
+        }
+      `}</style>
     </div>
   );
 }
