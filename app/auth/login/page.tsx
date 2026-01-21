@@ -19,7 +19,7 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
 
-    const res = login(email, password);
+    const res = await login(email, password);
     
     if (!res.ok) {
       setError(res.error || t("登录失败", "Login failed"));
