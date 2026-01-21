@@ -1,21 +1,47 @@
-/* app/insights/new/page.tsx */
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { createInsight, getSessionUser } from "@/lib/store";
+import { createInsight, getSessionUser, listLeagues, type League } from "@/lib/store";
+
+type LeagueOption = { slug: string; name: string };
 
 export default function NewInsightPage() {
   const router = useRouter();
+  const user = getSessionUser();
 
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
+
+  const [leagueSlug, setLeagueSlug] = useState<string>(""); // "" means no league selected
+  const [leagues, setLeagues] = useState<LeagueOption[]>([]);
+  const [loadingLeagues, setLoadingLeagues] = useState<boolean>(true);
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const user = getSessionUser();
+  // ✅ Fix: listLeagues is async, so we await it.
+  useEffect(() => {
+    (async () => {
+      try {
+        setLoadingLeagues(true);
+        const data: League[] = await listLeagues();
+        setLeagues(data.map((l) => ({ slug: l.slug, name: l.name })));
+      } catch (e) {
+        console.error(e);
+        setLeagues([]);
+      } finally {
+        setLoadingLeagues(false);
+      }
+    })();
+  }, []);
 
-  function onSubmit() {
+  const leagueSelectDisabled = useMemo(
+    () => submitting || loadingLeagues || leagues.length === 0,
+    [submitting, loadingLeagues, leagues.length]
+  );
+
+  async function onSubmit() {
     if (!user) {
       alert("Login required to post an insight.");
       router.push("/auth/login");
@@ -35,9 +61,10 @@ export default function NewInsightPage() {
     setSubmitting(true);
     setError(null);
 
-    const res = createInsight({
+    const res = await createInsight({
       title,
       body,
+      league_slug: leagueSlug ? leagueSlug : undefined,
     });
 
     if (!res.ok) {
@@ -46,7 +73,6 @@ export default function NewInsightPage() {
       return;
     }
 
-    // ✅ Step C: go back home for now
     router.push("/");
   }
 
@@ -57,16 +83,42 @@ export default function NewInsightPage() {
   return (
     <main className="bpfx-main">
       <div className="bpfx-wrap">
-        <div
-          className="bpfx-panel"
-          style={{ maxWidth: 720, margin: "80px auto" }}
-        >
+        <div className="bpfx-panel" style={{ maxWidth: 720, margin: "80px auto" }}>
           <h2 className="bpfx-panelTitle">New Insight</h2>
           <p className="bpfx-panelText">
-            Write a clear judgment. You can bind it to a league later.
+            Write a clear judgment. You can optionally bind it to a league now.
           </p>
 
           <div className="bpfx-stack" style={{ marginTop: 16 }}>
+            {/* League selector (optional) */}
+            <div>
+              <label style={{ display: "block", marginBottom: 8, opacity: 0.9 }}>
+                League (optional)
+              </label>
+              <select
+                className="bpfx-input"
+                value={leagueSlug}
+                onChange={(e) => setLeagueSlug(e.target.value)}
+                disabled={leagueSelectDisabled}
+              >
+                <option value="">
+                  {loadingLeagues
+                    ? "Loading leagues..."
+                    : leagues.length === 0
+                    ? "No leagues found"
+                    : "No league (post globally)"}
+                </option>
+                {leagues.map((l) => (
+                  <option key={l.slug} value={l.slug}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
+              <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>
+                If you don’t select a league, the insight will be posted without a league tag.
+              </div>
+            </div>
+
             <input
               className="bpfx-input"
               placeholder="Title"
@@ -85,26 +137,13 @@ export default function NewInsightPage() {
             />
           </div>
 
-          {error && (
-            <div style={{ color: "#d33", marginTop: 12 }}>{error}</div>
-          )}
+          {error && <div style={{ color: "#d33", marginTop: 12 }}>{error}</div>}
 
-          <div
-            className="bpfx-row"
-            style={{ justifyContent: "flex-end", marginTop: 24 }}
-          >
-            <button
-              className="bpfx-btn bpfx-btnGhost"
-              onClick={onCancel}
-              disabled={submitting}
-            >
+          <div className="bpfx-row" style={{ justifyContent: "flex-end", marginTop: 24 }}>
+            <button className="bpfx-btn bpfx-btnGhost" onClick={onCancel} disabled={submitting}>
               Cancel
             </button>
-            <button
-              className="bpfx-btn bpfx-btnPrimary"
-              onClick={onSubmit}
-              disabled={submitting}
-            >
+            <button className="bpfx-btn bpfx-btnPrimary" onClick={onSubmit} disabled={submitting}>
               {submitting ? "Posting..." : "Post"}
             </button>
           </div>

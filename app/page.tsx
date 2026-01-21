@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import Header from "@/components/Header";
 import { useLang } from "@/lib/lang";
-import { listInsights, listLeagues, Insight, League } from "@/lib/store";
+import { listInsights, listLeagues, getStats, Insight, League } from "@/lib/store";
 
 type ParsedInsight = Insight & {
   coverImage?: string;
@@ -31,8 +31,9 @@ const SAMPLE_POSTS: ParsedInsight[] = [
     title: "2024-25 赛季首轮选秀策略深度分析",
     body: "",
     content: "详解如何在首轮做出最佳选择，避开常见陷阱...",
-    author: "@Blueprint",
-    createdAt: Date.now() - 86400000,
+    author_id: "",
+    author: { id: "", name: "Blueprint", email: "", username: "Blueprint" },
+    created_at: new Date(Date.now() - 86400000).toISOString(),
     heat: 328,
     coverImage: "https://images.unsplash.com/photo-1546519638-68e109498ffc?w=400&h=300&fit=crop",
     tags: ["选秀策略", "新手指南"],
@@ -42,8 +43,9 @@ const SAMPLE_POSTS: ParsedInsight[] = [
     title: "Punt 助攻策略：如何构建顶级篮板阵容",
     body: "",
     content: "放弃助攻类别后，你可以专注于篮板和防守...",
-    author: "@FantasyPro",
-    createdAt: Date.now() - 172800000,
+    author_id: "",
+    author: { id: "", name: "FantasyPro", email: "", username: "FantasyPro" },
+    created_at: new Date(Date.now() - 172800000).toISOString(),
     heat: 256,
     coverImage: "https://images.unsplash.com/photo-1574623452334-1e0ac2b3ccb4?w=400&h=500&fit=crop",
     tags: ["Punt策略", "球员分析"],
@@ -53,8 +55,9 @@ const SAMPLE_POSTS: ParsedInsight[] = [
     title: "本周值得关注的 5 位潜力股",
     body: "",
     content: "这些球员可能在接下来几周大幅提升价值...",
-    author: "@FantasyGuru",
-    createdAt: Date.now() - 259200000,
+    author_id: "",
+    author: { id: "", name: "FantasyGuru", email: "", username: "FantasyGuru" },
+    created_at: new Date(Date.now() - 259200000).toISOString(),
     heat: 189,
     coverImage: "https://images.unsplash.com/photo-1504450758481-7338bbe75c8e?w=400&h=350&fit=crop",
     tags: ["每周推荐", "球员分析"],
@@ -64,8 +67,9 @@ const SAMPLE_POSTS: ParsedInsight[] = [
     title: "新手必读：9-Cat 联赛入门完全指南",
     body: "",
     content: "从零开始了解 Fantasy 篮球的所有基础知识...",
-    author: "@Rookie101",
-    createdAt: Date.now() - 345600000,
+    author_id: "",
+    author: { id: "", name: "Rookie101", email: "", username: "Rookie101" },
+    created_at: new Date(Date.now() - 345600000).toISOString(),
     heat: 412,
     coverImage: "https://images.unsplash.com/photo-1519861531473-9200262188bf?w=400&h=280&fit=crop",
     tags: ["新手指南"],
@@ -75,8 +79,9 @@ const SAMPLE_POSTS: ParsedInsight[] = [
     title: "交易窗口期：哪些球员应该趁高卖出？",
     body: "",
     content: "分析当前市场，找出被高估的球员...",
-    author: "@TradeKing",
-    createdAt: Date.now() - 432000000,
+    author_id: "",
+    author: { id: "", name: "TradeKing", email: "", username: "TradeKing" },
+    created_at: new Date(Date.now() - 432000000).toISOString(),
     heat: 167,
     coverImage: "https://images.unsplash.com/photo-1577471488278-16eec37ffcc2?w=400&h=450&fit=crop",
     tags: ["交易建议"],
@@ -86,8 +91,9 @@ const SAMPLE_POSTS: ParsedInsight[] = [
     title: "伤病警报：关键球员复出时间表更新",
     body: "",
     content: "追踪重要球员的伤病恢复进度...",
-    author: "@InjuryReport",
-    createdAt: Date.now() - 518400000,
+    author_id: "",
+    author: { id: "", name: "InjuryReport", email: "", username: "InjuryReport" },
+    created_at: new Date(Date.now() - 518400000).toISOString(),
     heat: 234,
     coverImage: "https://images.unsplash.com/photo-1471295253337-3ceaaedca402?w=400&h=320&fit=crop",
     tags: ["伤病更新"],
@@ -101,51 +107,71 @@ export default function HomePage() {
   const [leagues, setLeagues] = useState<League[]>([]);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [stats, setStats] = useState({ insightsCount: 0, leaguesCount: 0, usersCount: 0 });
 
   useEffect(() => {
-    // 加载帖子
-    const rawInsights = listInsights();
-    const parsed = rawInsights.map((item): ParsedInsight => {
-      let coverImage: string | undefined;
-      let images: string[] | undefined;
-      let tags: string[] | undefined;
-      let content = item.body;
-
+    async function loadData() {
       try {
-        const parsedBody = JSON.parse(item.body);
-        if (parsedBody.content) {
-          content = parsedBody.content;
-          coverImage = parsedBody.metadata?.coverImage;
-          images = parsedBody.metadata?.images;
-          tags = parsedBody.metadata?.tags;
-        }
-      } catch {}
+        // 加载帖子（现在是异步的）
+        const rawInsights = await listInsights();
+        const parsed = rawInsights.map((item): ParsedInsight => {
+          let coverImage: string | undefined;
+          let images: string[] | undefined;
+          let tags: string[] | undefined;
+          let content = item.body;
 
-      return { ...item, coverImage, images, tags, content };
-    });
+          try {
+            const parsedBody = JSON.parse(item.body);
+            if (parsedBody.content) {
+              content = parsedBody.content;
+              coverImage = parsedBody.metadata?.coverImage;
+              images = parsedBody.metadata?.images;
+              tags = parsedBody.metadata?.tags;
+            }
+          } catch {}
 
-    // 如果没有真实帖子，使用示例数据
-    const finalInsights = parsed.length > 0 ? parsed : SAMPLE_POSTS;
-    setInsights(finalInsights.sort((a, b) => b.createdAt - a.createdAt));
+          return { ...item, coverImage, images, tags, content };
+        });
 
-    // 加载联赛
-    setLeagues(listLeagues());
-    setIsLoading(false);
+        // 如果没有真实帖子，使用示例数据
+        const finalInsights = parsed.length > 0 ? parsed : SAMPLE_POSTS;
+        setInsights(finalInsights.sort((a, b) => 
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        ));
+
+        // 加载联赛（现在是异步的）
+        const leaguesData = await listLeagues();
+        setLeagues(leaguesData);
+
+        // 加载统计数据
+        const statsData = await getStats();
+        setStats(statsData);
+      } catch (error) {
+        console.error("Error loading data:", error);
+        // 出错时使用示例数据
+        setInsights(SAMPLE_POSTS);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    loadData();
   }, []);
 
   const filteredInsights = selectedTag 
     ? insights.filter(i => i.tags?.includes(selectedTag))
     : insights;
 
-  const formatTime = (timestamp: number) => {
-    const diff = Date.now() - timestamp;
+  const formatTime = (timestamp: string | number) => {
+    const time = typeof timestamp === 'string' ? new Date(timestamp).getTime() : timestamp;
+    const diff = Date.now() - time;
     const hours = Math.floor(diff / 3600000);
     const days = Math.floor(diff / 86400000);
     
     if (hours < 1) return t("刚刚", "Just now");
     if (hours < 24) return `${hours}${t("小时前", "h ago")}`;
     if (days < 7) return `${days}${t("天前", "d ago")}`;
-    return new Date(timestamp).toLocaleDateString();
+    return new Date(time).toLocaleDateString();
   };
 
   // 为瀑布流分配列
@@ -161,10 +187,18 @@ export default function HomePage() {
 
   const { left, right } = getColumns();
 
+  // 获取作者显示名称
+  const getAuthorName = (item: ParsedInsight) => {
+    if (item.author?.username) return `@${item.author.username}`;
+    if (item.author?.name) return item.author.name;
+    return "Anonymous";
+  };
+
   const renderCard = (item: ParsedInsight, index: number) => {
     const hasImage = item.coverImage || (item.images && item.images.length > 0);
     const displayImage = item.coverImage || item.images?.[0];
     const isSample = item.id.startsWith("sample-");
+    const authorName = getAuthorName(item);
     
     return (
       <Link 
@@ -195,8 +229,8 @@ export default function HomePage() {
           )}
           <div className="card-footer">
             <div className="card-author">
-              <div className="author-avatar">{item.author[1]?.toUpperCase() || "?"}</div>
-              <span className="author-name">{item.author}</span>
+              <div className="author-avatar">{authorName[1]?.toUpperCase() || "?"}</div>
+              <span className="author-name">{authorName}</span>
             </div>
             <div className="card-stats">
               <span className="stat-item">❤️ {item.heat}</span>
@@ -206,6 +240,20 @@ export default function HomePage() {
       </Link>
     );
   };
+
+  if (isLoading) {
+    return (
+      <div className="app">
+        <Header />
+        <main className="home-page">
+          <div style={{ textAlign: 'center', padding: '100px 20px' }}>
+            <div style={{ fontSize: '48px', marginBottom: '16px' }}>🏀</div>
+            <p style={{ color: 'var(--text-muted)' }}>{t("加载中...", "Loading...")}</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="app">
@@ -228,21 +276,21 @@ export default function HomePage() {
                 ✍️ {t("分享洞见", "Share Insight")}
               </Link>
               <Link href="/league/new" className="btn btn-ghost btn-lg">
-                �� {t("创建联赛", "Create League")}
+                🏀 {t("创建联赛", "Create League")}
               </Link>
             </div>
           </div>
           <div className="hero-stats">
             <div className="hero-stat">
-              <span className="stat-number">{insights.length > 0 ? insights.length : "1.2K"}</span>
+              <span className="stat-number">{stats.insightsCount > 0 ? stats.insightsCount : insights.length}</span>
               <span className="stat-label">{t("篇洞见", "Insights")}</span>
             </div>
             <div className="hero-stat">
-              <span className="stat-number">{leagues.length > 0 ? leagues.length : "380"}</span>
+              <span className="stat-number">{stats.leaguesCount > 0 ? stats.leaguesCount : leagues.length}</span>
               <span className="stat-label">{t("个联赛", "Leagues")}</span>
             </div>
             <div className="hero-stat">
-              <span className="stat-number">5.8K</span>
+              <span className="stat-number">{stats.usersCount > 0 ? stats.usersCount : "0"}</span>
               <span className="stat-label">{t("位玩家", "Players")}</span>
             </div>
           </div>
@@ -278,7 +326,7 @@ export default function HomePage() {
             className={`tab-btn ${activeTab === "insights" ? "active" : ""}`}
             onClick={() => setActiveTab("insights")}
           >
-            �� {t("洞见", "Insights")}
+            💡 {t("洞见", "Insights")}
           </button>
           <button 
             className={`tab-btn ${activeTab === "leagues" ? "active" : ""}`}
@@ -331,7 +379,7 @@ export default function HomePage() {
                       <h3 className="league-name">{league.name}</h3>
                       <div className="league-meta">
                         <span className="league-badge">{league.visibility === "public" ? t("公开", "Public") : t("私人", "Private")}</span>
-                        <span>{formatTime(league.createdAt)}</span>
+                        <span>{formatTime(league.created_at)}</span>
                       </div>
                     </div>
                     <div className="league-arrow">→</div>

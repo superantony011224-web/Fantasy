@@ -1,516 +1,501 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
+import { createInsight, getSessionUser, listLeagues, type League } from "@/lib/store";
 import Header from "@/components/Header";
-import { useLang } from "@/lib/lang";
-import { getSessionUser, createInsight, listLeagues } from "@/lib/store";
+
+type LeagueOption = { slug: string; name: string };
 
 export default function NewInsightPage() {
-  const { t } = useLang();
   const router = useRouter();
-  const [user, setUser] = useState<ReturnType<typeof getSessionUser>>(null);
+  const user = getSessionUser();
+
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
-  const [leagueSlug, setLeagueSlug] = useState("");
+
+  const [leagues, setLeagues] = useState<LeagueOption[]>([]);
+  const [leagueSlug, setLeagueSlug] = useState<string>("");
+  const [loadingLeagues, setLoadingLeagues] = useState(true);
+
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
-  const [coverImage, setCoverImage] = useState<string | null>(null);
-  const [images, setImages] = useState<string[]>([]); // 多张配图
-  const [loading, setLoading] = useState(false);
-  const [leagues, setLeagues] = useState<{ slug: string; name: string }[]>([]);
-  const coverInputRef = useRef<HTMLInputElement>(null);
-  const imagesInputRef = useRef<HTMLInputElement>(null);
+
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const coverInputRef = useRef<HTMLInputElement | null>(null);
+
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const u = getSessionUser();
-    setUser(u);
-    if (u) {
-      setLeagues(listLeagues().map(l => ({ slug: l.slug, name: l.name })));
-    }
+    (async () => {
+      try {
+        setLoadingLeagues(true);
+        const data: League[] = await listLeagues();
+        setLeagues(data.map((l) => ({ slug: l.slug, name: l.name })));
+      } finally {
+        setLoadingLeagues(false);
+      }
+    })();
   }, []);
 
-  const handleCoverUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        alert(t("图片大小不能超过5MB", "Image size cannot exceed 5MB"));
-        return;
-      }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setCoverImage(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
+  const leagueSelectDisabled = useMemo(
+    () => submitting || loadingLeagues || leagues.length === 0,
+    [submitting, loadingLeagues, leagues.length]
+  );
 
-  const handleImagesUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
-    
-    if (images.length + files.length > 9) {
-      alert(t("最多上传9张配图", "Maximum 9 images allowed"));
-      return;
-    }
-
-    Array.from(files).forEach(file => {
-      if (file.size > 5 * 1024 * 1024) {
-        alert(t(`图片 ${file.name} 超过5MB，已跳过`, `Image ${file.name} exceeds 5MB, skipped`));
-        return;
-      }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImages(prev => [...prev, reader.result as string]);
-      };
-      reader.readAsDataURL(file);
-    });
-  };
-
-  const removeImage = (index: number) => {
-    setImages(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const handleAddTag = () => {
-    const tag = tagInput.trim().toLowerCase();
-    if (tag && !tags.includes(tag) && tags.length < 5) {
-      setTags([...tags, tag]);
-      setTagInput("");
-    }
-  };
-
-  const handleRemoveTag = (tagToRemove: string) => {
-    setTags(tags.filter(t => t !== tagToRemove));
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      handleAddTag();
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user) return;
-    if (!title.trim() || !body.trim()) {
-      alert(t("请填写标题和内容", "Please fill in title and content"));
-      return;
-    }
-
-    setLoading(true);
-
-    const metadata = {
-      coverImage,
-      images,
-      tags,
-    };
-    const bodyWithMeta = JSON.stringify({ content: body, metadata });
-
-    const result = createInsight({
-      title,
-      body: bodyWithMeta,
-      leagueSlug: leagueSlug || undefined,
-    });
-
-    if (result.ok) {
-      router.push(`/insights/${result.insight?.id}`);
-    } else {
-      alert(result.error || t("发布失败", "Failed to publish"));
-      setLoading(false);
-    }
-  };
-
-  if (!user) {
-    return (
-      <div className="app">
-        <Header />
-        <main className="page-content" style={{ textAlign: "center", paddingTop: 100 }}>
-          <h1 className="page-title">{t("需要登录", "Login Required")}</h1>
-          <p style={{ color: "#64748b", marginBottom: 24 }}>{t("请先登录后发布内容", "Please login to publish content")}</p>
-          <Link href="/auth/login" className="btn btn-primary">{t("登录", "Login")}</Link>
-        </main>
-      </div>
-    );
+  function addTag(raw: string) {
+    const t = raw.trim();
+    if (!t || t.length > 16 || tags.includes(t) || tags.length >= 5) return;
+    setTags((prev) => [...prev, t]);
   }
+
+  function removeTag(t: string) {
+    setTags((prev) => prev.filter((x) => x !== t));
+  }
+
+  async function onSubmit() {
+    if (!user) {
+      alert("需要登录后才能发布洞见");
+      router.push("/auth/login");
+      return;
+    }
+
+    if (!title.trim()) {
+      setError("标题不能为空");
+      return;
+    }
+    if (!body.trim()) {
+      setError("内容不能为空");
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+
+    const res = await createInsight({
+      title,
+      body,
+      league_slug: leagueSlug ? leagueSlug : undefined,
+    });
+
+    if (!res.ok) {
+      setSubmitting(false);
+      setError(res.error ?? "发布失败");
+      return;
+    }
+
+    router.push("/");
+  }
+
+  const POPULAR_TAGS = ["选秀策略", "球员分析", "交易建议", "新手指南", "Punt策略"];
 
   return (
     <div className="app">
       <Header />
+      <main style={styles.main}>
+        <div style={styles.container}>
+          <div style={styles.header}>
+            <h1 style={styles.title}>发布洞见</h1>
+            <p style={styles.subtitle}>分享你的 Fantasy 篮球策略和分析</p>
+          </div>
 
-      <main className="page-content">
-        <div className="page-header">
-          <h1 className="page-title">{t("发布洞见", "Share Your Insight")}</h1>
-          <p className="page-desc">{t("分享你的 Fantasy 篮球策略和分析", "Share your Fantasy basketball strategies and analysis")}</p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="insight-form">
-          {/* Cover Image Upload */}
-          <div className="form-section">
-            <label className="form-label">{t("封面图片", "Cover Image")} <span className="optional">({t("可选", "Optional")})</span></label>
-            <div 
-              className="cover-upload"
-              onClick={() => coverInputRef.current?.click()}
-              style={{
-                backgroundImage: coverImage ? `url(${coverImage})` : undefined,
-                backgroundSize: "cover",
-                backgroundPosition: "center"
-              }}
-            >
-              {!coverImage && (
-                <div className="upload-placeholder">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 40, height: 40, marginBottom: 8 }}>
-                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                    <circle cx="8.5" cy="8.5" r="1.5"/>
-                    <polyline points="21 15 16 10 5 21"/>
-                  </svg>
-                  <span>{t("点击上传封面图", "Click to upload cover image")}</span>
-                  <span className="upload-hint">{t("推荐尺寸 16:9，最大 5MB", "Recommended 16:9 ratio, max 5MB")}</span>
+          <div style={styles.card}>
+            {/* Cover Image */}
+            <section style={styles.section}>
+              <label style={styles.label}>封面图片 <span style={styles.optional}>(可选)</span></label>
+              <input
+                ref={coverInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={(e) => setCoverFile(e.target.files?.[0] ?? null)}
+                disabled={submitting}
+              />
+              <button
+                type="button"
+                onClick={() => coverInputRef.current?.click()}
+                disabled={submitting}
+                style={styles.uploadBox}
+              >
+                <div style={styles.uploadIcon}>🖼</div>
+                <div style={styles.uploadText}>
+                  {coverFile ? `已选择：${coverFile.name}` : "点击上传封面图"}
                 </div>
-              )}
-              {coverImage && (
-                <button 
-                  type="button" 
-                  className="remove-cover"
-                  onClick={(e) => { e.stopPropagation(); setCoverImage(null); }}
-                >
-                  ✕
+                <div style={styles.uploadHint}>推荐尺寸 16:9，最大 5MB</div>
+              </button>
+            </section>
+
+            {/* Title */}
+            <section style={styles.section}>
+              <label style={styles.label}>标题 <span style={styles.required}>*</span></label>
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                disabled={submitting}
+                placeholder="例如：为什么我在首轮放弃了 Tatum"
+                style={styles.input}
+                maxLength={100}
+              />
+              <div style={styles.charCount}>{title.length}/100</div>
+            </section>
+
+            {/* Body */}
+            <section style={styles.section}>
+              <label style={styles.label}>内容 <span style={styles.required}>*</span></label>
+              <textarea
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                disabled={submitting}
+                placeholder="分享你的策略、分析或经验...&#10;&#10;支持使用 Markdown 格式"
+                rows={10}
+                style={styles.textarea}
+              />
+            </section>
+
+            {/* Analysis Images */}
+            <section style={styles.section}>
+              <label style={styles.label}>分析配图 <span style={styles.optional}>(最多9张)</span></label>
+              <div style={styles.imageGrid}>
+                <button type="button" disabled={submitting} style={styles.addImageBox}>
+                  <span style={{ fontSize: 24 }}>+</span>
+                  <span style={{ fontSize: 12, marginTop: 4 }}>添加图片</span>
                 </button>
-              )}
-            </div>
-            <input
-              ref={coverInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleCoverUpload}
-              style={{ display: "none" }}
-            />
-          </div>
-
-          {/* Title */}
-          <div className="form-section">
-            <label className="form-label">{t("标题", "Title")} *</label>
-            <input
-              className="form-input title-input"
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder={t("例如：为什么我在首轮放弃了 Tatum", "E.g., Why I passed on Tatum in round 1")}
-              maxLength={100}
-            />
-            <div className="char-count">{title.length}/100</div>
-          </div>
-
-          {/* Body */}
-          <div className="form-section">
-            <label className="form-label">{t("内容", "Content")} *</label>
-            <textarea
-              className="form-input body-input"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder={t(
-                "分享你的策略、分析或经验...\n\n支持使用 Markdown 格式",
-                "Share your strategy, analysis or experience...\n\nMarkdown formatting supported"
-              )}
-              rows={12}
-            />
-          </div>
-
-          {/* Multiple Images Upload */}
-          <div className="form-section">
-            <label className="form-label">{t("分析配图", "Analysis Images")} <span className="optional">({t("最多9张", "Max 9")})</span></label>
-            <div className="images-grid">
-              {images.map((img, index) => (
-                <div key={index} className="image-item">
-                  <img src={img} alt={`Image ${index + 1}`} />
-                  <button type="button" className="remove-image" onClick={() => removeImage(index)}>✕</button>
-                </div>
-              ))}
-              {images.length < 9 && (
-                <div className="add-image" onClick={() => imagesInputRef.current?.click()}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 24, height: 24 }}>
-                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                  </svg>
-                  <span>{t("添加图片", "Add Image")}</span>
-                </div>
-              )}
-            </div>
-            <input
-              ref={imagesInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={handleImagesUpload}
-              style={{ display: "none" }}
-            />
-          </div>
-
-          {/* Tags */}
-          <div className="form-section">
-            <label className="form-label">{t("标签", "Tags")} <span className="optional">({t("最多5个", "Max 5")})</span></label>
-            <div className="tags-input-container">
-              <div className="tags-list">
-                {tags.map(tag => (
-                  <span key={tag} className="tag-chip">
-                    #{tag}
-                    <button type="button" onClick={() => handleRemoveTag(tag)}>✕</button>
-                  </span>
-                ))}
               </div>
-              {tags.length < 5 && (
-                <div className="tag-input-wrapper">
-                  <input
-                    className="form-input tag-input"
-                    type="text"
-                    value={tagInput}
-                    onChange={(e) => setTagInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder={t("输入标签后按回车", "Type tag and press Enter")}
-                  />
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={handleAddTag}>
-                    {t("添加", "Add")}
-                  </button>
-                </div>
-              )}
-            </div>
-            <div className="suggested-tags">
-              <span className="suggested-label">{t("热门标签:", "Popular:")}</span>
-              {["选秀策略", "球员分析", "交易建议", "新手指南", "Punt策略"].map(tag => (
-                <button
-                  key={tag}
-                  type="button"
-                  className="suggested-tag"
-                  onClick={() => {
-                    if (!tags.includes(tag) && tags.length < 5) {
-                      setTags([...tags, tag]);
+            </section>
+
+            {/* Tags */}
+            <section style={styles.section}>
+              <label style={styles.label}>标签 <span style={styles.optional}>(最多5个)</span></label>
+              <div style={styles.tagInputRow}>
+                <input
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  disabled={submitting}
+                  placeholder="输入标签后按回车"
+                  style={{ ...styles.input, flex: 1 }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addTag(tagInput);
+                      setTagInput("");
                     }
                   }}
+                />
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={() => { addTag(tagInput); setTagInput(""); }}
+                  style={styles.addTagBtn}
                 >
-                  #{tag}
+                  添加
                 </button>
-              ))}
+              </div>
+              
+              {/* Selected Tags */}
+              <div style={styles.tagsRow}>
+                {tags.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => removeTag(t)}
+                    style={styles.selectedTag}
+                  >
+                    #{t} <span style={{ marginLeft: 4, opacity: 0.6 }}>×</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Popular Tags */}
+              <div style={styles.popularTagsRow}>
+                <span style={styles.popularLabel}>热门标签：</span>
+                {POPULAR_TAGS.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => addTag(t)}
+                    style={styles.popularTag}
+                    disabled={tags.includes(t)}
+                  >
+                    #{t}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            {/* League Select */}
+            <section style={styles.section}>
+              <label style={styles.label}>关联联赛 <span style={styles.optional}>(可选)</span></label>
+              <div style={styles.selectWrapper}>
+                <select
+                  value={leagueSlug}
+                  onChange={(e) => setLeagueSlug(e.target.value)}
+                  disabled={leagueSelectDisabled}
+                  style={styles.select}
+                >
+                  <option value="">
+                    {loadingLeagues ? "加载中…" : leagues.length === 0 ? "暂无联赛" : "不关联联赛"}
+                  </option>
+                  {leagues.map((l) => (
+                    <option key={l.slug} value={l.slug}>{l.name}</option>
+                  ))}
+                </select>
+                <span style={styles.selectArrow}>▾</span>
+              </div>
+            </section>
+
+            {/* Error */}
+            {error && <div style={styles.error}>{error}</div>}
+
+            {/* Actions */}
+            <div style={styles.actions}>
+              <button
+                type="button"
+                onClick={() => router.push("/")}
+                disabled={submitting}
+                style={styles.cancelBtn}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={onSubmit}
+                disabled={submitting}
+                style={styles.submitBtn}
+              >
+                {submitting ? "发布中…" : "发布"}
+              </button>
             </div>
           </div>
-
-          {/* League Association */}
-          <div className="form-section">
-            <label className="form-label">{t("关联联赛", "Associate with League")} <span className="optional">({t("可选", "Optional")})</span></label>
-            <select
-              className="form-input"
-              value={leagueSlug}
-              onChange={(e) => setLeagueSlug(e.target.value)}
-            >
-              <option value="">{t("不关联联赛", "No league association")}</option>
-              {leagues.map(league => (
-                <option key={league.slug} value={league.slug}>{league.name}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Submit */}
-          <div className="form-actions">
-            <Link href="/" className="btn btn-ghost">{t("取消", "Cancel")}</Link>
-            <button type="submit" className="btn btn-primary" disabled={loading || !title.trim() || !body.trim()}>
-              {loading ? t("发布中...", "Publishing...") : t("发布", "Publish")}
-            </button>
-          </div>
-        </form>
+        </div>
       </main>
-
-      <style jsx>{`
-        .insight-form {
-          max-width: 700px;
-          margin: 0 auto;
-        }
-        .form-section {
-          margin-bottom: 24px;
-        }
-        .form-label {
-          display: block;
-          margin-bottom: 8px;
-          font-weight: 600;
-          color: var(--text-primary);
-        }
-        .optional {
-          font-weight: 400;
-          color: var(--text-muted);
-          font-size: 14px;
-        }
-        .cover-upload {
-          width: 100%;
-          height: 200px;
-          border: 2px dashed var(--border-color);
-          border-radius: 12px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          transition: all 0.2s;
-          position: relative;
-          overflow: hidden;
-        }
-        .cover-upload:hover {
-          border-color: var(--accent);
-          background: rgba(245, 158, 11, 0.05);
-        }
-        .upload-placeholder {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          color: var(--text-muted);
-        }
-        .upload-hint {
-          font-size: 12px;
-          margin-top: 4px;
-        }
-        .remove-cover, .remove-image {
-          position: absolute;
-          top: 8px;
-          right: 8px;
-          width: 28px;
-          height: 28px;
-          border-radius: 50%;
-          background: rgba(0,0,0,0.6);
-          color: white;
-          border: none;
-          cursor: pointer;
-          font-size: 14px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-        .remove-cover:hover, .remove-image:hover {
-          background: rgba(239, 68, 68, 0.8);
-        }
-        .title-input {
-          font-size: 18px;
-          font-weight: 600;
-        }
-        .char-count {
-          text-align: right;
-          font-size: 12px;
-          color: var(--text-muted);
-          margin-top: 4px;
-        }
-        .body-input {
-          min-height: 250px;
-          resize: vertical;
-          line-height: 1.6;
-        }
-        .images-grid {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 12px;
-        }
-        .image-item {
-          position: relative;
-          aspect-ratio: 1;
-          border-radius: 8px;
-          overflow: hidden;
-        }
-        .image-item img {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-        }
-        .add-image {
-          aspect-ratio: 1;
-          border: 2px dashed var(--border-color);
-          border-radius: 8px;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          gap: 8px;
-          cursor: pointer;
-          color: var(--text-muted);
-          transition: all 0.2s;
-        }
-        .add-image:hover {
-          border-color: var(--accent);
-          color: var(--accent);
-        }
-        .add-image span {
-          font-size: 12px;
-        }
-        .tags-input-container {
-          background: var(--bg-card);
-          border: 1px solid var(--border-color);
-          border-radius: 8px;
-          padding: 12px;
-        }
-        .tags-list {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 8px;
-          margin-bottom: 8px;
-        }
-        .tag-chip {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          background: rgba(245, 158, 11, 0.15);
-          color: var(--accent);
-          padding: 4px 10px;
-          border-radius: 16px;
-          font-size: 14px;
-        }
-        .tag-chip button {
-          background: none;
-          border: none;
-          color: inherit;
-          cursor: pointer;
-          padding: 0;
-          font-size: 12px;
-          opacity: 0.7;
-        }
-        .tag-chip button:hover {
-          opacity: 1;
-        }
-        .tag-input-wrapper {
-          display: flex;
-          gap: 8px;
-        }
-        .tag-input {
-          flex: 1;
-          margin: 0;
-        }
-        .suggested-tags {
-          margin-top: 12px;
-          display: flex;
-          flex-wrap: wrap;
-          gap: 8px;
-          align-items: center;
-        }
-        .suggested-label {
-          font-size: 13px;
-          color: var(--text-muted);
-        }
-        .suggested-tag {
-          background: var(--bg-secondary);
-          border: 1px solid var(--border-color);
-          border-radius: 12px;
-          padding: 4px 10px;
-          font-size: 13px;
-          color: var(--text-secondary);
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-        .suggested-tag:hover {
-          border-color: var(--accent);
-          color: var(--accent);
-        }
-        .form-actions {
-          display: flex;
-          justify-content: flex-end;
-          gap: 12px;
-          margin-top: 32px;
-          padding-top: 24px;
-          border-top: 1px solid var(--border-color);
-        }
-      `}</style>
     </div>
   );
 }
+
+const styles: { [key: string]: React.CSSProperties } = {
+  main: {
+    minHeight: '100vh',
+    background: 'linear-gradient(180deg, #0a0f1a 0%, #070b14 100%)',
+    padding: '40px 16px 80px',
+  },
+  container: {
+    maxWidth: 700,
+    margin: '0 auto',
+  },
+  header: {
+    marginBottom: 32,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 700,
+    color: '#f59e0b',
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.6)',
+  },
+  card: {
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: 16,
+    padding: 32,
+  },
+  section: {
+    marginBottom: 28,
+  },
+  label: {
+    display: 'block',
+    fontSize: 14,
+    fontWeight: 500,
+    color: 'rgba(255,255,255,0.85)',
+    marginBottom: 10,
+  },
+  required: {
+    color: '#f59e0b',
+  },
+  optional: {
+    color: 'rgba(255,255,255,0.4)',
+    fontWeight: 400,
+  },
+  uploadBox: {
+    width: '100%',
+    padding: '40px 20px',
+    border: '2px dashed rgba(255,255,255,0.15)',
+    borderRadius: 12,
+    background: 'rgba(255,255,255,0.02)',
+    cursor: 'pointer',
+    textAlign: 'center' as const,
+    transition: 'all 0.2s',
+  },
+  uploadIcon: {
+    fontSize: 32,
+    marginBottom: 8,
+    opacity: 0.6,
+  },
+  uploadText: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 14,
+    fontWeight: 500,
+  },
+  uploadHint: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  input: {
+    width: '100%',
+    padding: '14px 16px',
+    fontSize: 15,
+    color: '#fff',
+    background: 'rgba(255,255,255,0.05)',
+    border: '1px solid rgba(255,255,255,0.12)',
+    borderRadius: 10,
+    outline: 'none',
+    boxSizing: 'border-box' as const,
+  },
+  charCount: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.4)',
+    textAlign: 'right' as const,
+    marginTop: 6,
+  },
+  textarea: {
+    width: '100%',
+    padding: '14px 16px',
+    fontSize: 15,
+    color: '#fff',
+    background: 'rgba(255,255,255,0.05)',
+    border: '1px solid rgba(255,255,255,0.12)',
+    borderRadius: 10,
+    outline: 'none',
+    resize: 'vertical' as const,
+    minHeight: 180,
+    boxSizing: 'border-box' as const,
+    fontFamily: 'inherit',
+  },
+  imageGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: 12,
+  },
+  addImageBox: {
+    aspectRatio: '1',
+    display: 'flex',
+    flexDirection: 'column' as const,
+    alignItems: 'center',
+    justifyContent: 'center',
+    border: '2px dashed rgba(255,255,255,0.15)',
+    borderRadius: 10,
+    background: 'rgba(255,255,255,0.02)',
+    color: 'rgba(255,255,255,0.5)',
+    cursor: 'pointer',
+  },
+  tagInputRow: {
+    display: 'flex',
+    gap: 10,
+  },
+  addTagBtn: {
+    padding: '14px 20px',
+    background: '#f59e0b',
+    color: '#000',
+    fontWeight: 600,
+    border: 'none',
+    borderRadius: 10,
+    cursor: 'pointer',
+  },
+  tagsRow: {
+    display: 'flex',
+    flexWrap: 'wrap' as const,
+    gap: 8,
+    marginTop: 12,
+  },
+  selectedTag: {
+    padding: '6px 12px',
+    background: 'rgba(245, 158, 11, 0.15)',
+    border: '1px solid rgba(245, 158, 11, 0.3)',
+    borderRadius: 20,
+    color: '#f59e0b',
+    fontSize: 13,
+    cursor: 'pointer',
+  },
+  popularTagsRow: {
+    display: 'flex',
+    flexWrap: 'wrap' as const,
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 14,
+  },
+  popularLabel: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.4)',
+  },
+  popularTag: {
+    padding: '4px 10px',
+    background: 'rgba(255,255,255,0.05)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: 14,
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 12,
+    cursor: 'pointer',
+  },
+  selectWrapper: {
+    position: 'relative' as const,
+  },
+  select: {
+    width: '100%',
+    padding: '14px 40px 14px 16px',
+    fontSize: 15,
+    color: '#fff',
+    background: 'rgba(255,255,255,0.05)',
+    border: '1px solid rgba(255,255,255,0.12)',
+    borderRadius: 10,
+    outline: 'none',
+    appearance: 'none' as const,
+    cursor: 'pointer',
+  },
+  selectArrow: {
+    position: 'absolute' as const,
+    right: 16,
+    top: '50%',
+    transform: 'translateY(-50%)',
+    color: 'rgba(255,255,255,0.5)',
+    pointerEvents: 'none' as const,
+  },
+  error: {
+    padding: '12px 16px',
+    background: 'rgba(220, 38, 38, 0.15)',
+    border: '1px solid rgba(220, 38, 38, 0.3)',
+    borderRadius: 10,
+    color: '#fca5a5',
+    fontSize: 14,
+    marginBottom: 20,
+  },
+  actions: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: 12,
+    paddingTop: 16,
+    borderTop: '1px solid rgba(255,255,255,0.08)',
+  },
+  cancelBtn: {
+    padding: '12px 24px',
+    background: 'transparent',
+    border: '1px solid rgba(255,255,255,0.15)',
+    borderRadius: 10,
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 15,
+    cursor: 'pointer',
+  },
+  submitBtn: {
+    padding: '12px 28px',
+    background: '#f59e0b',
+    border: 'none',
+    borderRadius: 10,
+    color: '#000',
+    fontSize: 15,
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+};
