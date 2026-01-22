@@ -265,7 +265,7 @@ export default function LeagueDetailPage() {
                 <span>•</span>
                 <span>{members.length}/12 {t("队伍", "teams")}</span>
                 <span>•</span>
-                <span>{t("创建于", "Created")} {new Date(league.createdAt).toLocaleDateString()}</span>
+                <span>{t("创建于", "Created")} {new Date((league as any).created_at || (league as any).createdAt).toLocaleDateString()}</span>
               </div>
             </div>
           </div>
