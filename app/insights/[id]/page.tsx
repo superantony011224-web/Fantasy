@@ -60,8 +60,8 @@ export default function InsightDetailPage() {
         } catch { }
 
         const authorName = typeof raw.author === 'object' ? (raw.author as any)?.username || (raw.author as any)?.name : raw.author;
-        const createdAtNum = typeof raw.created_at === 'string' ? new Date(raw.created_at).getTime() : (raw.createdAt || Date.now());
-
+        const createdAtNum = typeof (raw as any).created_at === 'string' ? new Date((raw as any).created_at).getTime() : ((raw as any).createdAt || Date.now());
+        
         setInsight({
           id: raw.id,
           title: raw.title,
