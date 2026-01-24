@@ -32,8 +32,9 @@
      title: string;
      body: string;
      league_slug?: string;
-     cover_url?: string;    // 新增
-     tags?: string[];       // 新增
+     cover_url?: string;
+     images?: string[];      // 多图支持
+     tags?: string[];
      author_id: string;
      author?: User;
      heat: number;
@@ -324,8 +325,9 @@
      title: string;
      body: string;
      league_slug?: string;
-     cover_url?: string;    // 新增
-     tags?: string[];       // 新增
+     cover_url?: string;
+     images?: string[];      // 多图支持
+     tags?: string[];
    }) {
      const user = getSessionUser();
      if (!user) return { ok: false as const, error: "Login required" };
@@ -336,10 +338,11 @@
          title: input.title.trim(),
          body: input.body.trim(),
          league_slug: input.league_slug,
-         cover_url: input.cover_url,     // 新增
-         tags: input.tags,               // 新增
+         cover_url: input.cover_url,
+         images: input.images,      // 多图支持
+         tags: input.tags,
          author_id: user.id,
-         heat: Math.floor(80 + Math.random() * 200),
+         heat: 0,  // 初始点赞数为 0
        })
        .select(`*, author:users(id, name, username, avatar_url)`)
        .single();
@@ -348,6 +351,39 @@
        return { ok: false as const, error: error.message };
      }
      return { ok: true as const, insight: data };
+   }
+   
+   // 删除帖子（只有作者可以删除）
+   export async function deleteInsight(insightId: string) {
+     const user = getSessionUser();
+     if (!user) return { ok: false as const, error: "Login required" };
+   
+     // 先检查是否是作者
+     const { data: insight } = await supabase
+       .from("insights")
+       .select("author_id")
+       .eq("id", insightId)
+       .single();
+   
+     if (!insight || insight.author_id !== user.id) {
+       return { ok: false as const, error: "Permission denied" };
+     }
+   
+     // 删除帖子（相关评论会因为外键约束自动删除，或者手动删除）
+     const { error: deleteCommentsError } = await supabase
+       .from("comments")
+       .delete()
+       .eq("insight_id", insightId);
+   
+     const { error } = await supabase
+       .from("insights")
+       .delete()
+       .eq("id", insightId);
+   
+     if (error) {
+       return { ok: false as const, error: error.message };
+     }
+     return { ok: true as const };
    }
    
    // ==================== Comments (Supabase) ====================
@@ -380,6 +416,42 @@
        return { ok: false as const, error: error.message };
      }
      return { ok: true as const, comment: data };
+   }
+   
+   // 删除评论
+   // - 如果是评论作者删除：从数据库删除，所有人都看不到
+   // - 如果是其他用户删除：只在本地隐藏，存到 localStorage
+   export async function deleteComment(commentId: string, commentAuthorId: string) {
+     const user = getSessionUser();
+     if (!user) return { ok: false as const, error: "Login required" };
+   
+     // 如果是评论作者，真正删除
+     if (user.id === commentAuthorId) {
+       const { error } = await supabase
+         .from("comments")
+         .delete()
+         .eq("id", commentId);
+   
+       if (error) {
+         return { ok: false as const, error: error.message };
+       }
+       return { ok: true as const, type: "deleted" as const };
+     }
+   
+     // 如果不是作者，只在本地隐藏
+     const hiddenKey = "bp_hidden_comments";
+     const hidden = JSON.parse(localStorage.getItem(hiddenKey) || "[]");
+     if (!hidden.includes(commentId)) {
+       hidden.push(commentId);
+       localStorage.setItem(hiddenKey, JSON.stringify(hidden));
+     }
+     return { ok: true as const, type: "hidden" as const };
+   }
+   
+   // 获取本地隐藏的评论 ID 列表
+   export function getHiddenComments(): string[] {
+     if (typeof window === "undefined") return [];
+     return JSON.parse(localStorage.getItem("bp_hidden_comments") || "[]");
    }
    
    // ==================== Leagues (Supabase) ====================

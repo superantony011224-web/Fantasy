@@ -7685,10 +7685,16 @@ __turbopack_context__.s([
     ()=>createLeague,
     "createMyTeam",
     ()=>createMyTeam,
+    "deleteComment",
+    ()=>deleteComment,
+    "deleteInsight",
+    ()=>deleteInsight,
     "getDraftById",
     ()=>getDraftById,
     "getDraftPicks",
     ()=>getDraftPicks,
+    "getHiddenComments",
+    ()=>getHiddenComments,
     "getInsightById",
     ()=>getInsightById,
     "getLeagueBySlug",
@@ -7921,9 +7927,10 @@ async function createInsight(input) {
         body: input.body.trim(),
         league_slug: input.league_slug,
         cover_url: input.cover_url,
+        images: input.images,
         tags: input.tags,
         author_id: user.id,
-        heat: Math.floor(80 + Math.random() * 200)
+        heat: 0
     }).select(`*, author:users(id, name, username, avatar_url)`).single();
     if (error) {
         return {
@@ -7934,6 +7941,33 @@ async function createInsight(input) {
     return {
         ok: true,
         insight: data
+    };
+}
+async function deleteInsight(insightId) {
+    const user = getSessionUser();
+    if (!user) return {
+        ok: false,
+        error: "Login required"
+    };
+    // 先检查是否是作者
+    const { data: insight } = await __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$lib$2f$supabase$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["supabase"].from("insights").select("author_id").eq("id", insightId).single();
+    if (!insight || insight.author_id !== user.id) {
+        return {
+            ok: false,
+            error: "Permission denied"
+        };
+    }
+    // 删除帖子（相关评论会因为外键约束自动删除，或者手动删除）
+    const { error: deleteCommentsError } = await __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$lib$2f$supabase$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["supabase"].from("comments").delete().eq("insight_id", insightId);
+    const { error } = await __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$lib$2f$supabase$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["supabase"].from("insights").delete().eq("id", insightId);
+    if (error) {
+        return {
+            ok: false,
+            error: error.message
+        };
+    }
+    return {
+        ok: true
     };
 }
 async function listComments(insightId) {
@@ -7964,6 +7998,43 @@ async function addComment(insightId, body) {
         ok: true,
         comment: data
     };
+}
+async function deleteComment(commentId, commentAuthorId) {
+    const user = getSessionUser();
+    if (!user) return {
+        ok: false,
+        error: "Login required"
+    };
+    // 如果是评论作者，真正删除
+    if (user.id === commentAuthorId) {
+        const { error } = await __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$lib$2f$supabase$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["supabase"].from("comments").delete().eq("id", commentId);
+        if (error) {
+            return {
+                ok: false,
+                error: error.message
+            };
+        }
+        return {
+            ok: true,
+            type: "deleted"
+        };
+    }
+    // 如果不是作者，只在本地隐藏
+    const hiddenKey = "bp_hidden_comments";
+    const hidden = JSON.parse(localStorage.getItem(hiddenKey) || "[]");
+    if (!hidden.includes(commentId)) {
+        hidden.push(commentId);
+        localStorage.setItem(hiddenKey, JSON.stringify(hidden));
+    }
+    return {
+        ok: true,
+        type: "hidden"
+    };
+}
+function getHiddenComments() {
+    if ("TURBOPACK compile-time falsy", 0) //TURBOPACK unreachable
+    ;
+    return JSON.parse(localStorage.getItem("bp_hidden_comments") || "[]");
 }
 async function listLeagues() {
     const { data, error } = await __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$lib$2f$supabase$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["supabase"].from("leagues").select("*").order("created_at", {

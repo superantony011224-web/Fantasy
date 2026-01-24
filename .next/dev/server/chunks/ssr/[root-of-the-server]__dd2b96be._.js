@@ -7696,10 +7696,16 @@ __turbopack_context__.s([
     ()=>createLeague,
     "createMyTeam",
     ()=>createMyTeam,
+    "deleteComment",
+    ()=>deleteComment,
+    "deleteInsight",
+    ()=>deleteInsight,
     "getDraftById",
     ()=>getDraftById,
     "getDraftPicks",
     ()=>getDraftPicks,
+    "getHiddenComments",
+    ()=>getHiddenComments,
     "getInsightById",
     ()=>getInsightById,
     "getLeagueBySlug",
@@ -7925,9 +7931,10 @@ async function createInsight(input) {
         body: input.body.trim(),
         league_slug: input.league_slug,
         cover_url: input.cover_url,
+        images: input.images,
         tags: input.tags,
         author_id: user.id,
-        heat: Math.floor(80 + Math.random() * 200)
+        heat: 0
     }).select(`*, author:users(id, name, username, avatar_url)`).single();
     if (error) {
         return {
@@ -7938,6 +7945,33 @@ async function createInsight(input) {
     return {
         ok: true,
         insight: data
+    };
+}
+async function deleteInsight(insightId) {
+    const user = getSessionUser();
+    if (!user) return {
+        ok: false,
+        error: "Login required"
+    };
+    // 先检查是否是作者
+    const { data: insight } = await __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$lib$2f$supabase$2e$ts__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["supabase"].from("insights").select("author_id").eq("id", insightId).single();
+    if (!insight || insight.author_id !== user.id) {
+        return {
+            ok: false,
+            error: "Permission denied"
+        };
+    }
+    // 删除帖子（相关评论会因为外键约束自动删除，或者手动删除）
+    const { error: deleteCommentsError } = await __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$lib$2f$supabase$2e$ts__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["supabase"].from("comments").delete().eq("insight_id", insightId);
+    const { error } = await __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$lib$2f$supabase$2e$ts__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["supabase"].from("insights").delete().eq("id", insightId);
+    if (error) {
+        return {
+            ok: false,
+            error: error.message
+        };
+    }
+    return {
+        ok: true
     };
 }
 async function listComments(insightId) {
@@ -7968,6 +8002,43 @@ async function addComment(insightId, body) {
         ok: true,
         comment: data
     };
+}
+async function deleteComment(commentId, commentAuthorId) {
+    const user = getSessionUser();
+    if (!user) return {
+        ok: false,
+        error: "Login required"
+    };
+    // 如果是评论作者，真正删除
+    if (user.id === commentAuthorId) {
+        const { error } = await __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$lib$2f$supabase$2e$ts__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["supabase"].from("comments").delete().eq("id", commentId);
+        if (error) {
+            return {
+                ok: false,
+                error: error.message
+            };
+        }
+        return {
+            ok: true,
+            type: "deleted"
+        };
+    }
+    // 如果不是作者，只在本地隐藏
+    const hiddenKey = "bp_hidden_comments";
+    const hidden = JSON.parse(localStorage.getItem(hiddenKey) || "[]");
+    if (!hidden.includes(commentId)) {
+        hidden.push(commentId);
+        localStorage.setItem(hiddenKey, JSON.stringify(hidden));
+    }
+    return {
+        ok: true,
+        type: "hidden"
+    };
+}
+function getHiddenComments() {
+    if ("TURBOPACK compile-time truthy", 1) return [];
+    //TURBOPACK unreachable
+    ;
 }
 async function listLeagues() {
     const { data, error } = await __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$lib$2f$supabase$2e$ts__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["supabase"].from("leagues").select("*").order("created_at", {
@@ -8624,55 +8695,46 @@ function InsightDetailPage() {
     const [user, setUser] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useState"])(null);
     const [insight, setInsight] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useState"])(null);
     const [comments, setComments] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useState"])([]);
+    const [hiddenComments, setHiddenComments] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useState"])([]);
     const [newComment, setNewComment] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useState"])("");
     const [liked, setLiked] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useState"])(false);
     const [likeCount, setLikeCount] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useState"])(0);
     const [loading, setLoading] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useState"])(true);
-    const [showDeleteConfirm, setShowDeleteConfirm] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useState"])(false);
-    const [lightboxImage, setLightboxImage] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useState"])(null);
-    const [isFollowing, setIsFollowing] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useState"])(false);
+    const [showDeleteModal, setShowDeleteModal] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useState"])(false);
+    const [deletingPost, setDeletingPost] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useState"])(false);
+    const [currentImageIndex, setCurrentImageIndex] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useState"])(0);
     (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useEffect"])(()=>{
-        const loadInsight = async ()=>{
-            const currentUser = (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$lib$2f$store$2e$ts__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["getSessionUser"])();
-            setUser(currentUser);
-            const raw = await (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$lib$2f$store$2e$ts__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["getInsightById"])(id);
-            if (raw) {
-                // 直接使用数据库字段，不再从 body 解析 JSON
-                const coverImage = raw.cover_url;
-                const tags = raw.tags;
-                const content = raw.body;
-                const authorName = typeof raw.author === 'object' ? raw.author?.username || raw.author?.name : raw.author;
-                const createdAtNum = typeof raw.created_at === 'string' ? new Date(raw.created_at).getTime() : raw.createdAt || Date.now();
-                setInsight({
-                    id: raw.id,
-                    title: raw.title,
-                    content,
-                    coverImage,
-                    tags,
-                    author: authorName || 'Unknown',
-                    createdAt: createdAtNum,
-                    heat: raw.heat,
-                    leagueSlug: raw.league_slug || raw.leagueSlug
-                });
-                setLikeCount(raw.heat);
-                const commentsData = await (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$lib$2f$store$2e$ts__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["listComments"])(raw.id);
-                setComments(commentsData);
-                // Check if user liked
-                const likedPosts = JSON.parse(localStorage.getItem("bp_liked_posts") || "[]");
-                setLiked(likedPosts.includes(raw.id));
-                // Check if following author
-                if (currentUser) {
-                    const following = JSON.parse(localStorage.getItem(`bp_following_${currentUser.id}`) || "[]");
-                    setIsFollowing(following.includes(authorName));
-                }
-            }
-            setLoading(false);
-        };
+        const currentUser = (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$lib$2f$store$2e$ts__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["getSessionUser"])();
+        setUser(currentUser);
+        setHiddenComments((0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$lib$2f$store$2e$ts__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["getHiddenComments"])());
         loadInsight();
     }, [
         id
     ]);
-    const isAuthor = user && insight && insight.author === user.name;
+    async function loadInsight() {
+        const data = await (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$lib$2f$store$2e$ts__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["getInsightById"])(id);
+        if (data) {
+            setInsight(data);
+            setLikeCount(data.heat || 0);
+            const commentsData = await (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$lib$2f$store$2e$ts__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["listComments"])(id);
+            setComments(commentsData);
+            // 检查是否已点赞
+            const likedPosts = JSON.parse(localStorage.getItem("bp_liked_posts") || "[]");
+            setLiked(likedPosts.includes(id));
+        }
+        setLoading(false);
+    }
+    const isAuthor = user && insight && insight.author_id === user.id;
+    const getAuthorName = ()=>{
+        if (!insight) return "Anonymous";
+        if (insight.author?.username) return insight.author.username;
+        if (insight.author?.name) return insight.author.name;
+        return "Anonymous";
+    };
+    const allImages = insight?.images || (insight?.cover_url ? [
+        insight.cover_url
+    ] : []);
+    // 点赞
     const handleLike = ()=>{
         if (!user) {
             alert(t("请先登录", "Please login first"));
@@ -8683,7 +8745,7 @@ function InsightDetailPage() {
             const newLiked = likedPosts.filter((pid)=>pid !== id);
             localStorage.setItem("bp_liked_posts", JSON.stringify(newLiked));
             setLiked(false);
-            setLikeCount((prev)=>prev - 1);
+            setLikeCount((prev)=>Math.max(0, prev - 1));
         } else {
             likedPosts.push(id);
             localStorage.setItem("bp_liked_posts", JSON.stringify(likedPosts));
@@ -8691,24 +8753,20 @@ function InsightDetailPage() {
             setLikeCount((prev)=>prev + 1);
         }
     };
-    const handleFollow = ()=>{
-        if (!user) {
-            alert(t("请先登录", "Please login first"));
-            return;
-        }
-        if (!insight) return;
-        const key = `bp_following_${user.id}`;
-        const following = JSON.parse(localStorage.getItem(key) || "[]");
-        if (isFollowing) {
-            const newFollowing = following.filter((name)=>name !== insight.author);
-            localStorage.setItem(key, JSON.stringify(newFollowing));
-            setIsFollowing(false);
+    // 删除帖子
+    const handleDeletePost = async ()=>{
+        if (!isAuthor) return;
+        setDeletingPost(true);
+        const res = await (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$lib$2f$store$2e$ts__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["deleteInsight"])(id);
+        if (res.ok) {
+            router.push("/");
         } else {
-            following.push(insight.author);
-            localStorage.setItem(key, JSON.stringify(following));
-            setIsFollowing(true);
+            alert(res.error || "删除失败");
+            setDeletingPost(false);
+            setShowDeleteModal(false);
         }
     };
+    // 发表评论
     const handleComment = async (e)=>{
         e.preventDefault();
         if (!user) {
@@ -8725,29 +8783,30 @@ function InsightDetailPage() {
             setNewComment("");
         }
     };
-    const handleDelete = ()=>{
-        const allInsights = JSON.parse(localStorage.getItem("bp_insights") || "[]");
-        const filtered = allInsights.filter((i)=>i.id !== id);
-        localStorage.setItem("bp_insights", JSON.stringify(filtered));
-        alert(t("帖子已删除", "Post deleted"));
-        router.push("/");
-    };
-    const handleShare = async ()=>{
-        const url = window.location.href;
-        if (navigator.share) {
-            try {
-                await navigator.share({
-                    title: insight?.title,
-                    url
-                });
-            } catch  {}
-        } else {
-            navigator.clipboard.writeText(url);
-            alert(t("链接已复制到剪贴板", "Link copied to clipboard"));
+    // 删除评论
+    const handleDeleteComment = async (commentId, commentAuthorId)=>{
+        if (!user) return;
+        const isCommentAuthor = user.id === commentAuthorId;
+        const confirmMsg = isCommentAuthor ? t("确定删除这条评论吗？删除后所有人都看不到", "Delete this comment? It will be removed for everyone.") : t("确定隐藏这条评论吗？只有你看不到", "Hide this comment? Only you won't see it.");
+        if (!confirm(confirmMsg)) return;
+        const res = await (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$lib$2f$store$2e$ts__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["deleteComment"])(commentId, commentAuthorId);
+        if (res.ok) {
+            if (res.type === "deleted") {
+                // 真正删除了，从列表移除
+                setComments(comments.filter((c)=>c.id !== commentId));
+            } else {
+                // 只是隐藏，更新隐藏列表
+                setHiddenComments([
+                    ...hiddenComments,
+                    commentId
+                ]);
+            }
         }
     };
-    const formatDate = (timestamp)=>{
-        const date = new Date(timestamp);
+    // 过滤掉隐藏的评论
+    const visibleComments = comments.filter((c)=>!hiddenComments.includes(c.id));
+    const formatDate = (dateStr)=>{
+        const date = new Date(dateStr);
         const now = new Date();
         const diff = now.getTime() - date.getTime();
         const days = Math.floor(diff / (1000 * 60 * 60 * 24));
@@ -8756,379 +8815,417 @@ function InsightDetailPage() {
         if (days < 7) return `${days} ${t("天前", "days ago")}`;
         return date.toLocaleDateString();
     };
-    // Helper function to get comment author name
-    const getCommentAuthor = (comment)=>{
-        if (typeof comment.author === 'object') {
-            return comment.author?.username || comment.author?.name || 'Anonymous';
-        }
-        return comment.author || 'Anonymous';
-    };
-    // Helper function to get comment date
-    const getCommentDate = (comment)=>{
-        if (typeof comment.created_at === 'string') {
-            return new Date(comment.created_at).getTime();
-        }
-        return comment.createdAt || Date.now();
-    };
     if (loading) {
         return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-            className: "app",
+            className: `jsx-${styles.__hash}` + " " + "app",
             children: [
                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$components$2f$Header$2e$tsx__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["default"], {}, void 0, false, {
                     fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                    lineNumber: 196,
+                    lineNumber: 170,
                     columnNumber: 9
                 }, this),
                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("main", {
-                    className: "page-content",
-                    style: {
-                        textAlign: "center",
-                        paddingTop: 100
-                    },
-                    children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
-                        children: t("加载中...", "Loading...")
+                    className: `jsx-${styles.__hash}` + " " + "detail-page",
+                    children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                        className: `jsx-${styles.__hash}` + " " + "loading",
+                        children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                            className: `jsx-${styles.__hash}`,
+                            children: t("加载中...", "Loading...")
+                        }, void 0, false, {
+                            fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                            lineNumber: 173,
+                            columnNumber: 13
+                        }, this)
                     }, void 0, false, {
                         fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                        lineNumber: 198,
+                        lineNumber: 172,
                         columnNumber: 11
                     }, this)
                 }, void 0, false, {
                     fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                    lineNumber: 197,
+                    lineNumber: 171,
                     columnNumber: 9
-                }, this)
+                }, this),
+                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$styled$2d$jsx$2f$style$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["default"], {
+                    id: styles.__hash,
+                    children: styles
+                }, void 0, false, void 0, this)
             ]
         }, void 0, true, {
             fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-            lineNumber: 195,
+            lineNumber: 169,
             columnNumber: 7
         }, this);
     }
     if (!insight) {
         return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-            className: "app",
+            className: `jsx-${styles.__hash}` + " " + "app",
             children: [
                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$components$2f$Header$2e$tsx__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["default"], {}, void 0, false, {
                     fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                    lineNumber: 207,
+                    lineNumber: 184,
                     columnNumber: 9
                 }, this),
                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("main", {
-                    className: "page-content",
-                    style: {
-                        textAlign: "center",
-                        paddingTop: 100
-                    },
-                    children: [
-                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("h1", {
-                            className: "page-title",
-                            children: t("内容不存在", "Content Not Found")
-                        }, void 0, false, {
-                            fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                            lineNumber: 209,
-                            columnNumber: 11
-                        }, this),
-                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
-                            style: {
-                                color: "#64748b",
-                                marginBottom: 24
-                            },
-                            children: t("该内容可能已被删除", "This content may have been deleted")
-                        }, void 0, false, {
-                            fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                            lineNumber: 210,
-                            columnNumber: 11
-                        }, this),
-                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$client$2f$app$2d$dir$2f$link$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["default"], {
-                            href: "/",
-                            className: "btn btn-primary",
-                            children: t("返回首页", "Back to Home")
-                        }, void 0, false, {
-                            fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                            lineNumber: 211,
-                            columnNumber: 11
-                        }, this)
-                    ]
-                }, void 0, true, {
+                    className: `jsx-${styles.__hash}` + " " + "detail-page",
+                    children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                        className: `jsx-${styles.__hash}` + " " + "not-found",
+                        children: [
+                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                className: `jsx-${styles.__hash}` + " " + "icon",
+                                children: "😕"
+                            }, void 0, false, {
+                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                lineNumber: 187,
+                                columnNumber: 13
+                            }, this),
+                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("h2", {
+                                className: `jsx-${styles.__hash}`,
+                                children: t("内容不存在", "Content Not Found")
+                            }, void 0, false, {
+                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                lineNumber: 188,
+                                columnNumber: 13
+                            }, this),
+                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                                className: `jsx-${styles.__hash}`,
+                                children: t("该内容可能已被删除", "This content may have been deleted")
+                            }, void 0, false, {
+                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                lineNumber: 189,
+                                columnNumber: 13
+                            }, this),
+                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$client$2f$app$2d$dir$2f$link$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["default"], {
+                                href: "/",
+                                className: "back-btn",
+                                children: t("返回首页", "Back to Home")
+                            }, void 0, false, {
+                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                lineNumber: 190,
+                                columnNumber: 13
+                            }, this)
+                        ]
+                    }, void 0, true, {
+                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                        lineNumber: 186,
+                        columnNumber: 11
+                    }, this)
+                }, void 0, false, {
                     fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                    lineNumber: 208,
+                    lineNumber: 185,
                     columnNumber: 9
-                }, this)
+                }, this),
+                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$styled$2d$jsx$2f$style$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["default"], {
+                    id: styles.__hash,
+                    children: styles
+                }, void 0, false, void 0, this)
             ]
         }, void 0, true, {
             fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-            lineNumber: 206,
+            lineNumber: 183,
             columnNumber: 7
         }, this);
     }
     return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-        className: "jsx-89c21bcf9ff76908" + " " + "app",
+        className: `jsx-${styles.__hash}` + " " + "app",
         children: [
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$components$2f$Header$2e$tsx__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["default"], {}, void 0, false, {
                 fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                lineNumber: 219,
+                lineNumber: 200,
                 columnNumber: 7
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("main", {
-                className: "jsx-89c21bcf9ff76908" + " " + "insight-detail",
+                className: `jsx-${styles.__hash}` + " " + "detail-page",
                 children: [
-                    insight.coverImage && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                        onClick: ()=>setLightboxImage(insight.coverImage),
-                        className: "jsx-89c21bcf9ff76908" + " " + "cover-image",
-                        children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("img", {
-                            src: insight.coverImage,
-                            alt: insight.title,
-                            className: "jsx-89c21bcf9ff76908"
-                        }, void 0, false, {
-                            fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                            lineNumber: 225,
-                            columnNumber: 13
-                        }, this)
-                    }, void 0, false, {
-                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                        lineNumber: 224,
-                        columnNumber: 11
-                    }, this),
-                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("article", {
-                        className: "jsx-89c21bcf9ff76908" + " " + "insight-content",
+                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                        className: `jsx-${styles.__hash}` + " " + "container",
                         children: [
-                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("header", {
-                                className: "jsx-89c21bcf9ff76908" + " " + "insight-header",
+                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                className: `jsx-${styles.__hash}` + " " + "left-panel",
+                                children: allImages.length > 0 ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                    className: `jsx-${styles.__hash}` + " " + "image-viewer",
+                                    children: [
+                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                            className: `jsx-${styles.__hash}` + " " + "main-image",
+                                            children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("img", {
+                                                src: allImages[currentImageIndex],
+                                                alt: insight.title,
+                                                className: `jsx-${styles.__hash}`
+                                            }, void 0, false, {
+                                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                lineNumber: 208,
+                                                columnNumber: 19
+                                            }, this)
+                                        }, void 0, false, {
+                                            fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                            lineNumber: 207,
+                                            columnNumber: 17
+                                        }, this),
+                                        allImages.length > 1 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["Fragment"], {
+                                            children: [
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                                    className: `jsx-${styles.__hash}` + " " + "image-nav",
+                                                    children: [
+                                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
+                                                            onClick: ()=>setCurrentImageIndex((i)=>Math.max(0, i - 1)),
+                                                            disabled: currentImageIndex === 0,
+                                                            className: `jsx-${styles.__hash}` + " " + "nav-btn prev",
+                                                            children: "←"
+                                                        }, void 0, false, {
+                                                            fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                            lineNumber: 214,
+                                                            columnNumber: 23
+                                                        }, this),
+                                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                            className: `jsx-${styles.__hash}` + " " + "image-counter",
+                                                            children: [
+                                                                currentImageIndex + 1,
+                                                                " / ",
+                                                                allImages.length
+                                                            ]
+                                                        }, void 0, true, {
+                                                            fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                            lineNumber: 221,
+                                                            columnNumber: 23
+                                                        }, this),
+                                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
+                                                            onClick: ()=>setCurrentImageIndex((i)=>Math.min(allImages.length - 1, i + 1)),
+                                                            disabled: currentImageIndex === allImages.length - 1,
+                                                            className: `jsx-${styles.__hash}` + " " + "nav-btn next",
+                                                            children: "→"
+                                                        }, void 0, false, {
+                                                            fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                            lineNumber: 224,
+                                                            columnNumber: 23
+                                                        }, this)
+                                                    ]
+                                                }, void 0, true, {
+                                                    fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                    lineNumber: 213,
+                                                    columnNumber: 21
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                                    className: `jsx-${styles.__hash}` + " " + "thumbnails",
+                                                    children: allImages.map((img, idx)=>/*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
+                                                            onClick: ()=>setCurrentImageIndex(idx),
+                                                            className: `jsx-${styles.__hash}` + " " + `thumb ${idx === currentImageIndex ? "active" : ""}`,
+                                                            children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("img", {
+                                                                src: img,
+                                                                alt: `${idx + 1}`,
+                                                                className: `jsx-${styles.__hash}`
+                                                            }, void 0, false, {
+                                                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                                lineNumber: 240,
+                                                                columnNumber: 27
+                                                            }, this)
+                                                        }, idx, false, {
+                                                            fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                            lineNumber: 235,
+                                                            columnNumber: 25
+                                                        }, this))
+                                                }, void 0, false, {
+                                                    fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                    lineNumber: 233,
+                                                    columnNumber: 21
+                                                }, this)
+                                            ]
+                                        }, void 0, true)
+                                    ]
+                                }, void 0, true, {
+                                    fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                    lineNumber: 206,
+                                    columnNumber: 15
+                                }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                    className: `jsx-${styles.__hash}` + " " + "no-image",
+                                    children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                        className: `jsx-${styles.__hash}`,
+                                        children: "🏀"
+                                    }, void 0, false, {
+                                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                        lineNumber: 249,
+                                        columnNumber: 17
+                                    }, this)
+                                }, void 0, false, {
+                                    fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                    lineNumber: 248,
+                                    columnNumber: 15
+                                }, this)
+                            }, void 0, false, {
+                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                lineNumber: 204,
+                                columnNumber: 11
+                            }, this),
+                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                className: `jsx-${styles.__hash}` + " " + "right-panel",
                                 children: [
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                        style: {
-                                            display: "flex",
-                                            justifyContent: "space-between",
-                                            alignItems: "flex-start",
-                                            gap: 16
-                                        },
-                                        className: "jsx-89c21bcf9ff76908",
-                                        children: [
-                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("h1", {
-                                                className: "jsx-89c21bcf9ff76908" + " " + "insight-title",
-                                                children: insight.title
-                                            }, void 0, false, {
-                                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                                lineNumber: 232,
-                                                columnNumber: 15
-                                            }, this),
-                                            isAuthor && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
-                                                onClick: ()=>setShowDeleteConfirm(true),
-                                                title: t("删除", "Delete"),
-                                                className: "jsx-89c21bcf9ff76908" + " " + "delete-btn",
-                                                children: "🗑️"
-                                            }, void 0, false, {
-                                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                                lineNumber: 234,
-                                                columnNumber: 17
-                                            }, this)
-                                        ]
-                                    }, void 0, true, {
-                                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                        lineNumber: 231,
-                                        columnNumber: 13
-                                    }, this),
-                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                        className: "jsx-89c21bcf9ff76908" + " " + "author-section",
+                                        className: `jsx-${styles.__hash}` + " " + "author-section",
                                         children: [
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$client$2f$app$2d$dir$2f$link$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["default"], {
-                                                href: `/u/${insight.author.replace("@", "")}`,
-                                                className: "author-link",
+                                                href: `/u/${getAuthorName()}`,
+                                                className: "author-info",
                                                 children: [
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                                        className: "jsx-89c21bcf9ff76908" + " " + "author-avatar",
-                                                        children: insight.author[0]?.toUpperCase()
+                                                        className: `jsx-${styles.__hash}` + " " + "avatar",
+                                                        children: getAuthorName()[0]?.toUpperCase()
                                                     }, void 0, false, {
                                                         fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                                        lineNumber: 247,
+                                                        lineNumber: 259,
                                                         columnNumber: 17
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                                        className: "jsx-89c21bcf9ff76908" + " " + "author-info",
+                                                        className: `jsx-${styles.__hash}` + " " + "author-details",
                                                         children: [
                                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
-                                                                className: "jsx-89c21bcf9ff76908" + " " + "author-name",
-                                                                children: insight.author
+                                                                className: `jsx-${styles.__hash}` + " " + "name",
+                                                                children: getAuthorName()
                                                             }, void 0, false, {
                                                                 fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                                                lineNumber: 249,
+                                                                lineNumber: 261,
                                                                 columnNumber: 19
                                                             }, this),
                                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
-                                                                className: "jsx-89c21bcf9ff76908" + " " + "publish-date",
-                                                                children: formatDate(insight.createdAt)
+                                                                className: `jsx-${styles.__hash}` + " " + "date",
+                                                                children: formatDate(insight.created_at)
                                                             }, void 0, false, {
                                                                 fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                                                lineNumber: 250,
+                                                                lineNumber: 262,
                                                                 columnNumber: 19
                                                             }, this)
                                                         ]
                                                     }, void 0, true, {
                                                         fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                                        lineNumber: 248,
+                                                        lineNumber: 260,
                                                         columnNumber: 17
                                                     }, this)
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                                lineNumber: 246,
+                                                lineNumber: 258,
                                                 columnNumber: 15
                                             }, this),
-                                            !isAuthor && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
-                                                onClick: handleFollow,
-                                                className: "jsx-89c21bcf9ff76908" + " " + `follow-btn ${isFollowing ? "following" : ""}`,
-                                                children: isFollowing ? t("已关注", "Following") : t("关注", "Follow")
+                                            isAuthor && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
+                                                onClick: ()=>setShowDeleteModal(true),
+                                                title: t("删除帖子", "Delete Post"),
+                                                className: `jsx-${styles.__hash}` + " " + "delete-post-btn",
+                                                children: "🗑️"
                                             }, void 0, false, {
                                                 fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                                lineNumber: 254,
+                                                lineNumber: 267,
                                                 columnNumber: 17
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                        lineNumber: 245,
+                                        lineNumber: 257,
                                         columnNumber: 13
                                     }, this),
-                                    insight.tags && insight.tags.length > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                        className: "jsx-89c21bcf9ff76908" + " " + "insight-tags",
-                                        children: insight.tags.map((tag)=>/*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
-                                                className: "jsx-89c21bcf9ff76908" + " " + "tag",
+                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                        className: `jsx-${styles.__hash}` + " " + "content-section",
+                                        children: [
+                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("h1", {
+                                                className: `jsx-${styles.__hash}` + " " + "title",
+                                                children: insight.title
+                                            }, void 0, false, {
+                                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                lineNumber: 279,
+                                                columnNumber: 15
+                                            }, this),
+                                            insight.body && insight.body.trim() && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                                className: `jsx-${styles.__hash}` + " " + "body",
+                                                children: insight.body.split("\n").map((p, i)=>p.trim() ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                                                        className: `jsx-${styles.__hash}`,
+                                                        children: p
+                                                    }, i, false, {
+                                                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                        lineNumber: 284,
+                                                        columnNumber: 32
+                                                    }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("br", {
+                                                        className: `jsx-${styles.__hash}`
+                                                    }, i, false, {
+                                                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                        lineNumber: 284,
+                                                        columnNumber: 53
+                                                    }, this))
+                                            }, void 0, false, {
+                                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                lineNumber: 282,
+                                                columnNumber: 17
+                                            }, this),
+                                            insight.tags && insight.tags.length > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                                className: `jsx-${styles.__hash}` + " " + "tags",
+                                                children: insight.tags.map((tag)=>/*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                        className: `jsx-${styles.__hash}` + " " + "tag",
+                                                        children: [
+                                                            "#",
+                                                            tag
+                                                        ]
+                                                    }, tag, true, {
+                                                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                        lineNumber: 292,
+                                                        columnNumber: 21
+                                                    }, this))
+                                            }, void 0, false, {
+                                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                lineNumber: 290,
+                                                columnNumber: 17
+                                            }, this)
+                                        ]
+                                    }, void 0, true, {
+                                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                        lineNumber: 278,
+                                        columnNumber: 13
+                                    }, this),
+                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                        className: `jsx-${styles.__hash}` + " " + "actions-section",
+                                        children: [
+                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
+                                                onClick: handleLike,
+                                                className: `jsx-${styles.__hash}` + " " + `action-btn ${liked ? "liked" : ""}`,
                                                 children: [
-                                                    "#",
-                                                    tag
+                                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                        className: `jsx-${styles.__hash}`,
+                                                        children: liked ? "❤️" : "🤍"
+                                                    }, void 0, false, {
+                                                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                        lineNumber: 304,
+                                                        columnNumber: 17
+                                                    }, this),
+                                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                        className: `jsx-${styles.__hash}`,
+                                                        children: likeCount
+                                                    }, void 0, false, {
+                                                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                        lineNumber: 305,
+                                                        columnNumber: 17
+                                                    }, this)
                                                 ]
-                                            }, tag, true, {
+                                            }, void 0, true, {
                                                 fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                                lineNumber: 267,
-                                                columnNumber: 19
-                                            }, this))
-                                    }, void 0, false, {
-                                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                        lineNumber: 265,
-                                        columnNumber: 15
-                                    }, this)
-                                ]
-                            }, void 0, true, {
-                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                lineNumber: 230,
-                                columnNumber: 11
-                            }, this),
-                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                className: "jsx-89c21bcf9ff76908" + " " + "insight-body",
-                                children: insight.content.split("\n").map((paragraph, i)=>paragraph.trim() ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
-                                        className: "jsx-89c21bcf9ff76908",
-                                        children: paragraph
-                                    }, i, false, {
-                                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                        lineNumber: 276,
-                                        columnNumber: 34
-                                    }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("br", {
-                                        className: "jsx-89c21bcf9ff76908"
-                                    }, i, false, {
-                                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                        lineNumber: 276,
-                                        columnNumber: 63
-                                    }, this))
-                            }, void 0, false, {
-                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                lineNumber: 274,
-                                columnNumber: 11
-                            }, this),
-                            insight.images && insight.images.length > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                className: "jsx-89c21bcf9ff76908" + " " + "images-gallery",
-                                children: insight.images.map((img, index)=>/*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                        onClick: ()=>setLightboxImage(img),
-                                        className: "jsx-89c21bcf9ff76908" + " " + "gallery-item",
-                                        children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("img", {
-                                            src: img,
-                                            alt: `Image ${index + 1}`,
-                                            className: "jsx-89c21bcf9ff76908"
-                                        }, void 0, false, {
-                                            fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                            lineNumber: 289,
-                                            columnNumber: 19
-                                        }, this)
-                                    }, index, false, {
-                                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                        lineNumber: 284,
-                                        columnNumber: 17
-                                    }, this))
-                            }, void 0, false, {
-                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                lineNumber: 282,
-                                columnNumber: 13
-                            }, this),
-                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                className: "jsx-89c21bcf9ff76908" + " " + "insight-actions",
-                                children: [
-                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
-                                        onClick: handleLike,
-                                        className: "jsx-89c21bcf9ff76908" + " " + `action-btn ${liked ? "liked" : ""}`,
-                                        children: [
-                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
-                                                className: "jsx-89c21bcf9ff76908" + " " + "action-icon",
-                                                children: liked ? "❤️" : "🤍"
-                                            }, void 0, false, {
-                                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                                lineNumber: 298,
+                                                lineNumber: 300,
                                                 columnNumber: 15
                                             }, this),
-                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
-                                                className: "jsx-89c21bcf9ff76908",
-                                                children: likeCount
-                                            }, void 0, false, {
-                                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                                lineNumber: 299,
-                                                columnNumber: 15
-                                            }, this)
-                                        ]
-                                    }, void 0, true, {
-                                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                        lineNumber: 297,
-                                        columnNumber: 13
-                                    }, this),
-                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
-                                        onClick: ()=>document.getElementById("comment-input")?.focus(),
-                                        className: "jsx-89c21bcf9ff76908" + " " + "action-btn",
-                                        children: [
-                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
-                                                className: "jsx-89c21bcf9ff76908" + " " + "action-icon",
-                                                children: "💬"
-                                            }, void 0, false, {
-                                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                                lineNumber: 302,
-                                                columnNumber: 15
-                                            }, this),
-                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
-                                                className: "jsx-89c21bcf9ff76908",
-                                                children: comments.length
-                                            }, void 0, false, {
-                                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                                lineNumber: 303,
-                                                columnNumber: 15
-                                            }, this)
-                                        ]
-                                    }, void 0, true, {
-                                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                        lineNumber: 301,
-                                        columnNumber: 13
-                                    }, this),
-                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
-                                        onClick: handleShare,
-                                        className: "jsx-89c21bcf9ff76908" + " " + "action-btn",
-                                        children: [
-                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
-                                                className: "jsx-89c21bcf9ff76908" + " " + "action-icon",
-                                                children: "📤"
-                                            }, void 0, false, {
-                                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                                lineNumber: 306,
-                                                columnNumber: 15
-                                            }, this),
-                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
-                                                className: "jsx-89c21bcf9ff76908",
-                                                children: t("分享", "Share")
-                                            }, void 0, false, {
+                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
+                                                className: `jsx-${styles.__hash}` + " " + "action-btn",
+                                                children: [
+                                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                        className: `jsx-${styles.__hash}`,
+                                                        children: "💬"
+                                                    }, void 0, false, {
+                                                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                        lineNumber: 308,
+                                                        columnNumber: 17
+                                                    }, this),
+                                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                        className: `jsx-${styles.__hash}`,
+                                                        children: visibleComments.length
+                                                    }, void 0, false, {
+                                                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                        lineNumber: 309,
+                                                        columnNumber: 17
+                                                    }, this)
+                                                ]
+                                            }, void 0, true, {
                                                 fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
                                                 lineNumber: 307,
                                                 columnNumber: 15
@@ -9136,277 +9233,736 @@ function InsightDetailPage() {
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                        lineNumber: 305,
+                                        lineNumber: 299,
+                                        columnNumber: 13
+                                    }, this),
+                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                        className: `jsx-${styles.__hash}` + " " + "comments-section",
+                                        children: [
+                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("h3", {
+                                                className: `jsx-${styles.__hash}` + " " + "comments-title",
+                                                children: [
+                                                    t("评论", "Comments"),
+                                                    " (",
+                                                    visibleComments.length,
+                                                    ")"
+                                                ]
+                                            }, void 0, true, {
+                                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                lineNumber: 315,
+                                                columnNumber: 15
+                                            }, this),
+                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("form", {
+                                                onSubmit: handleComment,
+                                                className: `jsx-${styles.__hash}` + " " + "comment-form",
+                                                children: [
+                                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
+                                                        value: newComment,
+                                                        onChange: (e)=>setNewComment(e.target.value),
+                                                        placeholder: user ? t("说点什么...", "Say something...") : t("登录后评论", "Login to comment"),
+                                                        disabled: !user,
+                                                        className: `jsx-${styles.__hash}`
+                                                    }, void 0, false, {
+                                                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                        lineNumber: 321,
+                                                        columnNumber: 17
+                                                    }, this),
+                                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
+                                                        type: "submit",
+                                                        disabled: !user || !newComment.trim(),
+                                                        className: `jsx-${styles.__hash}`,
+                                                        children: t("发送", "Send")
+                                                    }, void 0, false, {
+                                                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                        lineNumber: 327,
+                                                        columnNumber: 17
+                                                    }, this)
+                                                ]
+                                            }, void 0, true, {
+                                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                lineNumber: 320,
+                                                columnNumber: 15
+                                            }, this),
+                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                                className: `jsx-${styles.__hash}` + " " + "comments-list",
+                                                children: visibleComments.length === 0 ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                                    className: `jsx-${styles.__hash}` + " " + "no-comments",
+                                                    children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                                                        className: `jsx-${styles.__hash}`,
+                                                        children: t("还没有评论", "No comments yet")
+                                                    }, void 0, false, {
+                                                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                        lineNumber: 336,
+                                                        columnNumber: 21
+                                                    }, this)
+                                                }, void 0, false, {
+                                                    fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                    lineNumber: 335,
+                                                    columnNumber: 19
+                                                }, this) : visibleComments.map((comment)=>{
+                                                    const commentAuthor = comment.author?.username || comment.author?.name || "Anonymous";
+                                                    const isCommentAuthor = user && user.id === comment.author_id;
+                                                    return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                                        className: `jsx-${styles.__hash}` + " " + "comment-item",
+                                                        children: [
+                                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                                                className: `jsx-${styles.__hash}` + " " + "comment-avatar",
+                                                                children: commentAuthor[0]?.toUpperCase()
+                                                            }, void 0, false, {
+                                                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                                lineNumber: 345,
+                                                                columnNumber: 25
+                                                            }, this),
+                                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                                                className: `jsx-${styles.__hash}` + " " + "comment-content",
+                                                                children: [
+                                                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                                                        className: `jsx-${styles.__hash}` + " " + "comment-header",
+                                                                        children: [
+                                                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                                                className: `jsx-${styles.__hash}` + " " + "comment-author",
+                                                                                children: commentAuthor
+                                                                            }, void 0, false, {
+                                                                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                                                lineNumber: 350,
+                                                                                columnNumber: 29
+                                                                            }, this),
+                                                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                                                className: `jsx-${styles.__hash}` + " " + "comment-date",
+                                                                                children: formatDate(comment.created_at)
+                                                                            }, void 0, false, {
+                                                                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                                                lineNumber: 351,
+                                                                                columnNumber: 29
+                                                                            }, this)
+                                                                        ]
+                                                                    }, void 0, true, {
+                                                                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                                        lineNumber: 349,
+                                                                        columnNumber: 27
+                                                                    }, this),
+                                                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                                                                        className: `jsx-${styles.__hash}` + " " + "comment-body",
+                                                                        children: comment.body
+                                                                    }, void 0, false, {
+                                                                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                                        lineNumber: 353,
+                                                                        columnNumber: 27
+                                                                    }, this)
+                                                                ]
+                                                            }, void 0, true, {
+                                                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                                lineNumber: 348,
+                                                                columnNumber: 25
+                                                            }, this),
+                                                            user && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
+                                                                onClick: ()=>handleDeleteComment(comment.id, comment.author_id),
+                                                                title: isCommentAuthor ? t("删除评论", "Delete") : t("隐藏评论", "Hide"),
+                                                                className: `jsx-${styles.__hash}` + " " + "delete-comment-btn",
+                                                                children: isCommentAuthor ? "🗑️" : "👁️‍🗨️"
+                                                            }, void 0, false, {
+                                                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                                lineNumber: 356,
+                                                                columnNumber: 27
+                                                            }, this)
+                                                        ]
+                                                    }, comment.id, true, {
+                                                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                        lineNumber: 344,
+                                                        columnNumber: 23
+                                                    }, this);
+                                                })
+                                            }, void 0, false, {
+                                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                                lineNumber: 333,
+                                                columnNumber: 15
+                                            }, this)
+                                        ]
+                                    }, void 0, true, {
+                                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
+                                        lineNumber: 314,
                                         columnNumber: 13
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                lineNumber: 296,
+                                lineNumber: 255,
                                 columnNumber: 11
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                        lineNumber: 229,
+                        lineNumber: 202,
                         columnNumber: 9
                     }, this),
-                    lightboxImage && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                        onClick: ()=>setLightboxImage(null),
-                        className: "jsx-89c21bcf9ff76908" + " " + "lightbox",
-                        children: [
-                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("img", {
-                                src: lightboxImage,
-                                alt: "Full size",
-                                className: "jsx-89c21bcf9ff76908"
-                            }, void 0, false, {
-                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                lineNumber: 315,
-                                columnNumber: 13
-                            }, this),
-                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
-                                className: "jsx-89c21bcf9ff76908" + " " + "lightbox-close",
-                                children: "✕"
-                            }, void 0, false, {
-                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                lineNumber: 316,
-                                columnNumber: 13
-                            }, this)
-                        ]
-                    }, void 0, true, {
-                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                        lineNumber: 314,
-                        columnNumber: 11
-                    }, this),
-                    showDeleteConfirm && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                        onClick: ()=>setShowDeleteConfirm(false),
-                        className: "jsx-89c21bcf9ff76908" + " " + "modal-overlay",
+                    showDeleteModal && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                        onClick: ()=>setShowDeleteModal(false),
+                        className: `jsx-${styles.__hash}` + " " + "modal-overlay",
                         children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
                             onClick: (e)=>e.stopPropagation(),
-                            className: "jsx-89c21bcf9ff76908" + " " + "modal-content",
+                            className: `jsx-${styles.__hash}` + " " + "modal",
                             children: [
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("h3", {
-                                    className: "jsx-89c21bcf9ff76908",
+                                    className: `jsx-${styles.__hash}`,
                                     children: t("确认删除", "Confirm Delete")
                                 }, void 0, false, {
                                     fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                    lineNumber: 324,
+                                    lineNumber: 377,
                                     columnNumber: 15
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
-                                    style: {
-                                        color: "var(--text-muted)",
-                                        margin: "16px 0"
-                                    },
-                                    className: "jsx-89c21bcf9ff76908",
-                                    children: t("确定要删除这篇帖子吗？此操作无法撤销。", "Are you sure you want to delete this post? This action cannot be undone.")
+                                    className: `jsx-${styles.__hash}`,
+                                    children: t("确定要删除这篇笔记吗？此操作无法撤销。", "Are you sure you want to delete this post? This cannot be undone.")
                                 }, void 0, false, {
                                     fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                    lineNumber: 325,
+                                    lineNumber: 378,
                                     columnNumber: 15
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                    style: {
-                                        display: "flex",
-                                        gap: 12,
-                                        justifyContent: "flex-end"
-                                    },
-                                    className: "jsx-89c21bcf9ff76908",
+                                    className: `jsx-${styles.__hash}` + " " + "modal-actions",
                                     children: [
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
-                                            onClick: ()=>setShowDeleteConfirm(false),
-                                            className: "jsx-89c21bcf9ff76908" + " " + "btn btn-ghost",
+                                            onClick: ()=>setShowDeleteModal(false),
+                                            disabled: deletingPost,
+                                            className: `jsx-${styles.__hash}` + " " + "cancel-btn",
                                             children: t("取消", "Cancel")
                                         }, void 0, false, {
                                             fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                            lineNumber: 329,
+                                            lineNumber: 380,
                                             columnNumber: 17
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
-                                            onClick: handleDelete,
-                                            className: "jsx-89c21bcf9ff76908" + " " + "btn btn-danger",
-                                            children: t("删除", "Delete")
+                                            onClick: handleDeletePost,
+                                            disabled: deletingPost,
+                                            className: `jsx-${styles.__hash}` + " " + "confirm-btn",
+                                            children: deletingPost ? t("删除中...", "Deleting...") : t("确认删除", "Delete")
                                         }, void 0, false, {
                                             fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                            lineNumber: 332,
+                                            lineNumber: 387,
                                             columnNumber: 17
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                    lineNumber: 328,
+                                    lineNumber: 379,
                                     columnNumber: 15
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                            lineNumber: 323,
+                            lineNumber: 376,
                             columnNumber: 13
                         }, this)
                     }, void 0, false, {
                         fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                        lineNumber: 322,
+                        lineNumber: 375,
                         columnNumber: 11
-                    }, this),
-                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("section", {
-                        className: "jsx-89c21bcf9ff76908" + " " + "comments-section",
-                        children: [
-                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("h2", {
-                                className: "jsx-89c21bcf9ff76908" + " " + "comments-title",
-                                children: [
-                                    t("评论", "Comments"),
-                                    " (",
-                                    comments.length,
-                                    ")"
-                                ]
-                            }, void 0, true, {
-                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                lineNumber: 342,
-                                columnNumber: 11
-                            }, this),
-                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("form", {
-                                onSubmit: handleComment,
-                                className: "jsx-89c21bcf9ff76908" + " " + "comment-form",
-                                children: [
-                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                        className: "jsx-89c21bcf9ff76908" + " " + "comment-input-wrapper",
-                                        children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("textarea", {
-                                            id: "comment-input",
-                                            placeholder: user ? t("写下你的评论...", "Write a comment...") : t("请登录后评论", "Login to comment"),
-                                            value: newComment,
-                                            onChange: (e)=>setNewComment(e.target.value),
-                                            disabled: !user,
-                                            rows: 3,
-                                            className: "jsx-89c21bcf9ff76908" + " " + "comment-input"
-                                        }, void 0, false, {
-                                            fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                            lineNumber: 346,
-                                            columnNumber: 15
-                                        }, this)
-                                    }, void 0, false, {
-                                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                        lineNumber: 345,
-                                        columnNumber: 13
-                                    }, this),
-                                    user && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                        className: "jsx-89c21bcf9ff76908" + " " + "comment-submit",
-                                        children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
-                                            type: "submit",
-                                            disabled: !newComment.trim(),
-                                            className: "jsx-89c21bcf9ff76908" + " " + "btn btn-primary",
-                                            children: t("发表", "Submit")
-                                        }, void 0, false, {
-                                            fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                            lineNumber: 358,
-                                            columnNumber: 17
-                                        }, this)
-                                    }, void 0, false, {
-                                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                        lineNumber: 357,
-                                        columnNumber: 15
-                                    }, this)
-                                ]
-                            }, void 0, true, {
-                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                lineNumber: 344,
-                                columnNumber: 11
-                            }, this),
-                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                className: "jsx-89c21bcf9ff76908" + " " + "comments-list",
-                                children: comments.length === 0 ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
-                                    className: "jsx-89c21bcf9ff76908" + " " + "no-comments",
-                                    children: t("还没有评论，来说两句吧~", "No comments yet. Be the first!")
-                                }, void 0, false, {
-                                    fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                    lineNumber: 367,
-                                    columnNumber: 15
-                                }, this) : comments.map((comment, index)=>/*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                        className: "jsx-89c21bcf9ff76908" + " " + "comment-item",
-                                        children: [
-                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                                className: "jsx-89c21bcf9ff76908" + " " + "comment-avatar",
-                                                children: getCommentAuthor(comment)[0]?.toUpperCase()
-                                            }, void 0, false, {
-                                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                                lineNumber: 371,
-                                                columnNumber: 19
-                                            }, this),
-                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                                className: "jsx-89c21bcf9ff76908" + " " + "comment-content",
-                                                children: [
-                                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                                        className: "jsx-89c21bcf9ff76908" + " " + "comment-header",
-                                                        children: [
-                                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
-                                                                className: "jsx-89c21bcf9ff76908" + " " + "comment-author",
-                                                                children: getCommentAuthor(comment)
-                                                            }, void 0, false, {
-                                                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                                                lineNumber: 374,
-                                                                columnNumber: 23
-                                                            }, this),
-                                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
-                                                                className: "jsx-89c21bcf9ff76908" + " " + "comment-date",
-                                                                children: formatDate(getCommentDate(comment))
-                                                            }, void 0, false, {
-                                                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                                                lineNumber: 375,
-                                                                columnNumber: 23
-                                                            }, this)
-                                                        ]
-                                                    }, void 0, true, {
-                                                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                                        lineNumber: 373,
-                                                        columnNumber: 21
-                                                    }, this),
-                                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
-                                                        className: "jsx-89c21bcf9ff76908" + " " + "comment-body",
-                                                        children: comment.body
-                                                    }, void 0, false, {
-                                                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                                        lineNumber: 377,
-                                                        columnNumber: 21
-                                                    }, this)
-                                                ]
-                                            }, void 0, true, {
-                                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                                lineNumber: 372,
-                                                columnNumber: 19
-                                            }, this)
-                                        ]
-                                    }, comment.id || index, true, {
-                                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                        lineNumber: 370,
-                                        columnNumber: 17
-                                    }, this))
-                            }, void 0, false, {
-                                fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                                lineNumber: 365,
-                                columnNumber: 11
-                            }, this)
-                        ]
-                    }, void 0, true, {
-                        fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                        lineNumber: 341,
-                        columnNumber: 9
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-                lineNumber: 221,
+                lineNumber: 201,
                 columnNumber: 7
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$fantasy$2d$web$2f$node_modules$2f$styled$2d$jsx$2f$style$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["default"], {
-                id: "89c21bcf9ff76908",
-                children: ".insight-detail.jsx-89c21bcf9ff76908{max-width:720px;margin:0 auto;padding:20px 16px 80px}.cover-image.jsx-89c21bcf9ff76908{cursor:pointer;border-radius:16px;width:100%;margin-bottom:24px;overflow:hidden}.cover-image.jsx-89c21bcf9ff76908 img.jsx-89c21bcf9ff76908{width:100%;height:auto;display:block}.insight-content.jsx-89c21bcf9ff76908{background:var(--bg-card);border:1px solid var(--border-color);border-radius:16px;margin-bottom:24px;padding:24px}.insight-header.jsx-89c21bcf9ff76908{margin-bottom:24px}.insight-title.jsx-89c21bcf9ff76908{margin-bottom:16px;font-size:24px;font-weight:700;line-height:1.3}.delete-btn.jsx-89c21bcf9ff76908{cursor:pointer;opacity:.6;background:0 0;border:none;padding:8px;font-size:20px;transition:opacity .2s}.delete-btn.jsx-89c21bcf9ff76908:hover{opacity:1}.author-section.jsx-89c21bcf9ff76908{border-bottom:1px solid var(--border-color);justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:16px;display:flex}.author-link.jsx-89c21bcf9ff76908{color:inherit;align-items:center;gap:12px;text-decoration:none;display:flex}.author-link.jsx-89c21bcf9ff76908:hover .author-name.jsx-89c21bcf9ff76908{color:var(--accent)}.author-avatar.jsx-89c21bcf9ff76908,.comment-avatar.jsx-89c21bcf9ff76908{color:#000;background:linear-gradient(135deg,#f59e0b,#d97706);border-radius:50%;flex-shrink:0;justify-content:center;align-items:center;width:40px;height:40px;font-size:16px;font-weight:600;display:flex}.author-info.jsx-89c21bcf9ff76908{flex-direction:column;display:flex}.author-name.jsx-89c21bcf9ff76908{font-weight:600;transition:color .2s}.publish-date.jsx-89c21bcf9ff76908{color:var(--text-muted);font-size:13px}.follow-btn.jsx-89c21bcf9ff76908{cursor:pointer;background:var(--accent);color:#000;border:2px solid var(--accent);border-radius:20px;padding:8px 20px;font-weight:600;transition:all .2s}.follow-btn.jsx-89c21bcf9ff76908:hover{transform:scale(1.05)}.follow-btn.following.jsx-89c21bcf9ff76908{color:var(--accent);background:0 0}.insight-tags.jsx-89c21bcf9ff76908{flex-wrap:wrap;gap:8px;margin-bottom:24px;display:flex}.tag.jsx-89c21bcf9ff76908{color:var(--accent);background:#f59e0b26;border-radius:16px;padding:4px 12px;font-size:14px}.insight-body.jsx-89c21bcf9ff76908{color:var(--text-primary);font-size:16px;line-height:1.8}.insight-body.jsx-89c21bcf9ff76908 p.jsx-89c21bcf9ff76908{margin-bottom:16px}.images-gallery.jsx-89c21bcf9ff76908{grid-template-columns:repeat(3,1fr);gap:8px;margin-top:24px;display:grid}.gallery-item.jsx-89c21bcf9ff76908{aspect-ratio:1;cursor:pointer;border-radius:8px;overflow:hidden}.gallery-item.jsx-89c21bcf9ff76908 img.jsx-89c21bcf9ff76908{object-fit:cover;width:100%;height:100%;transition:transform .3s}.gallery-item.jsx-89c21bcf9ff76908:hover img.jsx-89c21bcf9ff76908{transform:scale(1.05)}.lightbox.jsx-89c21bcf9ff76908{z-index:2000;cursor:pointer;background:#000000f2;justify-content:center;align-items:center;display:flex;position:fixed;inset:0}.lightbox.jsx-89c21bcf9ff76908 img.jsx-89c21bcf9ff76908{object-fit:contain;max-width:90%;max-height:90%}.lightbox-close.jsx-89c21bcf9ff76908{color:#fff;cursor:pointer;background:#fff3;border:none;border-radius:50%;width:40px;height:40px;font-size:20px;position:absolute;top:20px;right:20px}.insight-actions.jsx-89c21bcf9ff76908{border-top:1px solid var(--border-color);gap:24px;margin-top:32px;padding-top:24px;display:flex}.action-btn.jsx-89c21bcf9ff76908{color:var(--text-secondary);cursor:pointer;background:0 0;border:none;border-radius:8px;align-items:center;gap:6px;padding:8px 12px;font-size:15px;transition:all .2s;display:flex}.action-btn.jsx-89c21bcf9ff76908:hover{background:var(--bg-secondary)}.action-btn.liked.jsx-89c21bcf9ff76908{color:#ef4444}.action-icon.jsx-89c21bcf9ff76908{font-size:18px}.modal-overlay.jsx-89c21bcf9ff76908{z-index:1000;background:#000000b3;justify-content:center;align-items:center;display:flex;position:fixed;inset:0}.modal-content.jsx-89c21bcf9ff76908{background:var(--bg-card);border:1px solid var(--border-color);border-radius:12px;width:90%;max-width:400px;padding:24px}.comments-section.jsx-89c21bcf9ff76908{background:var(--bg-card);border:1px solid var(--border-color);border-radius:12px;padding:24px}.comments-title.jsx-89c21bcf9ff76908{margin-bottom:20px;font-size:18px;font-weight:600}.comment-form.jsx-89c21bcf9ff76908{margin-bottom:24px}.comment-input-wrapper.jsx-89c21bcf9ff76908{gap:12px;display:flex}.comment-input.jsx-89c21bcf9ff76908{background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);resize:none;border-radius:8px;flex:1;padding:12px;font-size:14px}.comment-input.jsx-89c21bcf9ff76908:focus{border-color:var(--accent);outline:none}.comment-input.jsx-89c21bcf9ff76908:disabled{opacity:.6;cursor:not-allowed}.comment-submit.jsx-89c21bcf9ff76908{justify-content:flex-end;margin-top:12px;display:flex}.comments-list.jsx-89c21bcf9ff76908{flex-direction:column;gap:20px;display:flex}.no-comments.jsx-89c21bcf9ff76908{text-align:center;color:var(--text-muted);padding:40px 0}.comment-item.jsx-89c21bcf9ff76908{gap:12px;display:flex}.comment-content.jsx-89c21bcf9ff76908{flex:1}.comment-header.jsx-89c21bcf9ff76908{align-items:center;gap:8px;margin-bottom:4px;display:flex}.comment-author.jsx-89c21bcf9ff76908{font-weight:500}.comment-date.jsx-89c21bcf9ff76908{color:var(--text-muted);font-size:13px}.comment-body.jsx-89c21bcf9ff76908{color:var(--text-primary);line-height:1.5}"
+                id: styles.__hash,
+                children: styles
             }, void 0, false, void 0, this)
         ]
     }, void 0, true, {
         fileName: "[project]/fantasy-web/app/insights/[id]/page.tsx",
-        lineNumber: 218,
+        lineNumber: 199,
         columnNumber: 5
     }, this);
 }
+const styles = `
+  .detail-page {
+    min-height: 100vh;
+    background: #0a0a0a;
+    padding: 24px 16px;
+  }
+
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 1fr 400px;
+    gap: 24px;
+    background: #111;
+    border: 1px solid #1a1a1a;
+    border-radius: 16px;
+    overflow: hidden;
+  }
+
+  /* 左侧图片区 */
+  .left-panel {
+    background: #000;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .image-viewer {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .main-image {
+    aspect-ratio: 4/5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+  }
+
+  .main-image img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+
+  .image-nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 12px;
+    background: #111;
+  }
+
+  .nav-btn {
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 50%;
+    background: #222;
+    color: #fff;
+    font-size: 16px;
+    cursor: pointer;
+  }
+
+  .nav-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+
+  .nav-btn:hover:not(:disabled) {
+    background: #333;
+  }
+
+  .image-counter {
+    font-size: 14px;
+    color: #888;
+  }
+
+  .thumbnails {
+    display: flex;
+    gap: 8px;
+    padding: 12px;
+    background: #111;
+    overflow-x: auto;
+  }
+
+  .thumb {
+    width: 60px;
+    height: 60px;
+    border: 2px solid transparent;
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    padding: 0;
+    background: none;
+  }
+
+  .thumb.active {
+    border-color: #f59e0b;
+  }
+
+  .thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .no-image {
+    aspect-ratio: 4/5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 80px;
+    opacity: 0.2;
+  }
+
+  /* 右侧内容区 */
+  .right-panel {
+    display: flex;
+    flex-direction: column;
+    padding: 24px;
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+
+  .author-section {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #222;
+    margin-bottom: 16px;
+  }
+
+  .author-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    text-decoration: none;
+    color: inherit;
+  }
+
+  .avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: #000;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .author-details {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .author-details .name {
+    font-weight: 600;
+    color: #fff;
+  }
+
+  .author-details .date {
+    font-size: 12px;
+    color: #666;
+  }
+
+  .delete-post-btn {
+    background: none;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    padding: 8px;
+    opacity: 0.5;
+    transition: opacity 0.2s;
+  }
+
+  .delete-post-btn:hover {
+    opacity: 1;
+  }
+
+  .content-section {
+    flex: 1;
+    margin-bottom: 16px;
+  }
+
+  .title {
+    font-size: 20px;
+    font-weight: 700;
+    color: #fff;
+    margin: 0 0 12px 0;
+    line-height: 1.4;
+  }
+
+  .body {
+    color: #ccc;
+    font-size: 15px;
+    line-height: 1.7;
+  }
+
+  .body p {
+    margin: 0 0 12px 0;
+  }
+
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  .tag {
+    padding: 4px 12px;
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    border-radius: 16px;
+    font-size: 13px;
+  }
+
+  .actions-section {
+    display: flex;
+    gap: 16px;
+    padding: 16px 0;
+    border-top: 1px solid #222;
+    border-bottom: 1px solid #222;
+    margin-bottom: 16px;
+  }
+
+  .action-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 15px;
+    cursor: pointer;
+    padding: 8px 12px;
+    border-radius: 8px;
+    transition: all 0.2s;
+  }
+
+  .action-btn:hover {
+    background: #1a1a1a;
+  }
+
+  .action-btn.liked {
+    color: #ef4444;
+  }
+
+  /* 评论区 */
+  .comments-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .comments-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #fff;
+    margin: 0 0 16px 0;
+  }
+
+  .comment-form {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .comment-form input {
+    flex: 1;
+    padding: 12px 16px;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 24px;
+    color: #fff;
+    font-size: 14px;
+    outline: none;
+  }
+
+  .comment-form input:focus {
+    border-color: #f59e0b;
+  }
+
+  .comment-form button {
+    padding: 12px 20px;
+    background: #f59e0b;
+    border: none;
+    border-radius: 24px;
+    color: #000;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .comment-form button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .comments-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .no-comments {
+    text-align: center;
+    padding: 32px;
+    color: #666;
+  }
+
+  .comment-item {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .comment-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: #000;
+    font-size: 12px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .comment-content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .comment-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+
+  .comment-author {
+    font-weight: 500;
+    color: #fff;
+    font-size: 14px;
+  }
+
+  .comment-date {
+    font-size: 12px;
+    color: #666;
+  }
+
+  .comment-body {
+    color: #ccc;
+    font-size: 14px;
+    line-height: 1.5;
+    margin: 0;
+    word-break: break-word;
+  }
+
+  .delete-comment-btn {
+    background: none;
+    border: none;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 4px;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+
+  .comment-item:hover .delete-comment-btn {
+    opacity: 0.5;
+  }
+
+  .delete-comment-btn:hover {
+    opacity: 1 !important;
+  }
+
+  /* 弹窗 */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+
+  .modal {
+    background: #111;
+    border: 1px solid #222;
+    border-radius: 16px;
+    padding: 24px;
+    max-width: 400px;
+    width: 90%;
+  }
+
+  .modal h3 {
+    font-size: 18px;
+    color: #fff;
+    margin: 0 0 12px 0;
+  }
+
+  .modal p {
+    color: #888;
+    font-size: 14px;
+    margin: 0 0 24px 0;
+  }
+
+  .modal-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+  }
+
+  .cancel-btn {
+    padding: 10px 20px;
+    background: transparent;
+    border: 1px solid #333;
+    border-radius: 8px;
+    color: #888;
+    cursor: pointer;
+  }
+
+  .confirm-btn {
+    padding: 10px 20px;
+    background: #ef4444;
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .confirm-btn:disabled {
+    opacity: 0.5;
+  }
+
+  /* 加载和错误状态 */
+  .loading, .not-found {
+    text-align: center;
+    padding: 80px 20px;
+  }
+
+  .not-found .icon {
+    font-size: 64px;
+    margin-bottom: 16px;
+  }
+
+  .not-found h2 {
+    font-size: 20px;
+    color: #fff;
+    margin: 0 0 8px 0;
+  }
+
+  .not-found p {
+    color: #666;
+    margin: 0 0 24px 0;
+  }
+
+  .back-btn {
+    display: inline-block;
+    padding: 12px 24px;
+    background: #f59e0b;
+    color: #000;
+    font-weight: 600;
+    border-radius: 8px;
+    text-decoration: none;
+  }
+
+  /* 响应式 */
+  @media (max-width: 800px) {
+    .container {
+      grid-template-columns: 1fr;
+    }
+
+    .right-panel {
+      max-height: none;
+    }
+  }
+`;
 }),
 ];
 
