@@ -5,12 +5,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
 import { useLang } from "@/lib/lang";
-import { listLeagues, getSessionUser, League } from "@/lib/store";
+import { listLeagues, getLeagueMemberCount, getSessionUser, League } from "@/lib/store";
+
+type LeagueWithCount = League & { memberCount: number };
 
 export default function PublicLeaguesPage() {
   const { t } = useLang();
   const router = useRouter();
-  const [leagues, setLeagues] = useState<League[]>([]);
+  const [leagues, setLeagues] = useState<LeagueWithCount[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const user = getSessionUser();
@@ -19,7 +21,17 @@ export default function PublicLeaguesPage() {
     async function load() {
       const data = await listLeagues();
       // 只显示公开的联赛
-      setLeagues(data.filter(l => l.visibility === "public"));
+      const publicLeagues = data.filter(l => l.visibility === "public");
+      
+      // 获取每个联赛的成员数量
+      const leaguesWithCounts = await Promise.all(
+        publicLeagues.map(async (league) => {
+          const memberCount = await getLeagueMemberCount(league.id);
+          return { ...league, memberCount };
+        })
+      );
+      
+      setLeagues(leaguesWithCounts);
       setLoading(false);
     }
     load();
@@ -139,12 +151,12 @@ export default function PublicLeaguesPage() {
                     <div className="stat">
                       <span className="stat-icon">👥</span>
                       <span className="stat-label">{t("成员", "Members")}</span>
-                      <span className="stat-value">--</span>
+                      <span className="stat-value">{league.memberCount}</span>
                     </div>
                     <div className="stat">
                       <span className="stat-icon">📝</span>
                       <span className="stat-label">{t("帖子", "Posts")}</span>
-                      <span className="stat-value">--</span>
+                      <span className="stat-value">0</span>
                     </div>
                   </div>
                   
