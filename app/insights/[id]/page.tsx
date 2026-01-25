@@ -13,6 +13,9 @@ import {
   deleteInsight,
   deleteComment,
   getHiddenComments,
+  likeInsight,
+  unlikeInsight,
+  isInsightLiked,
   Comment,
   Insight 
 } from "@/lib/store";
@@ -52,9 +55,8 @@ export default function InsightDetailPage() {
       const commentsData = await listComments(id);
       setComments(commentsData);
       
-      // 检查是否已点赞
-      const likedPosts = JSON.parse(localStorage.getItem("bp_liked_posts") || "[]");
-      setLiked(likedPosts.includes(id));
+      // 检查是否已点赞（使用新函数）
+      setLiked(isInsightLiked(id));
     }
     setLoading(false);
   }
@@ -71,24 +73,26 @@ export default function InsightDetailPage() {
   const allImages = insight?.images || (insight?.cover_url ? [insight.cover_url] : []);
 
   // 点赞
-  const handleLike = () => {
+  const handleLike = async () => {
     if (!user) {
       alert(t("请先登录", "Please login first"));
       return;
     }
     
-    const likedPosts = JSON.parse(localStorage.getItem("bp_liked_posts") || "[]");
-    
     if (liked) {
-      const newLiked = likedPosts.filter((pid: string) => pid !== id);
-      localStorage.setItem("bp_liked_posts", JSON.stringify(newLiked));
-      setLiked(false);
-      setLikeCount(prev => Math.max(0, prev - 1));
+      // 取消点赞
+      const res = await unlikeInsight(id);
+      if (res.ok) {
+        setLiked(false);
+        setLikeCount(prev => Math.max(0, prev - 1));
+      }
     } else {
-      likedPosts.push(id);
-      localStorage.setItem("bp_liked_posts", JSON.stringify(likedPosts));
-      setLiked(true);
-      setLikeCount(prev => prev + 1);
+      // 点赞
+      const res = await likeInsight(id);
+      if (res.ok) {
+        setLiked(true);
+        setLikeCount(prev => prev + 1);
+      }
     }
   };
 

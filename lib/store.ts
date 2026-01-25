@@ -386,6 +386,97 @@
      return { ok: true as const };
    }
    
+   // 点赞帖子
+   export async function likeInsight(insightId: string) {
+     const user = getSessionUser();
+     if (!user) return { ok: false as const, error: "Login required" };
+   
+     // 检查是否已点赞
+     const likedKey = `bp_liked_${user.id}`;
+     const liked = JSON.parse(localStorage.getItem(likedKey) || "[]");
+     
+     if (liked.includes(insightId)) {
+       return { ok: false as const, error: "Already liked" };
+     }
+   
+     // 更新数据库 heat + 1
+     const { data, error } = await supabase.rpc('increment_heat', { insight_id: insightId });
+     
+     // 如果没有 rpc 函数，用普通更新
+     if (error) {
+       // 先获取当前 heat
+       const { data: insight } = await supabase
+         .from("insights")
+         .select("heat")
+         .eq("id", insightId)
+         .single();
+       
+       if (insight) {
+         const { error: updateError } = await supabase
+           .from("insights")
+           .update({ heat: (insight.heat || 0) + 1 })
+           .eq("id", insightId);
+         
+         if (updateError) {
+           return { ok: false as const, error: updateError.message };
+         }
+       }
+     }
+   
+     // 保存到本地
+     liked.push(insightId);
+     localStorage.setItem(likedKey, JSON.stringify(liked));
+     
+     return { ok: true as const };
+   }
+   
+   // 取消点赞
+   export async function unlikeInsight(insightId: string) {
+     const user = getSessionUser();
+     if (!user) return { ok: false as const, error: "Login required" };
+   
+     const likedKey = `bp_liked_${user.id}`;
+     const liked = JSON.parse(localStorage.getItem(likedKey) || "[]");
+     
+     if (!liked.includes(insightId)) {
+       return { ok: false as const, error: "Not liked" };
+     }
+   
+     // 更新数据库 heat - 1
+     const { data: insight } = await supabase
+       .from("insights")
+       .select("heat")
+       .eq("id", insightId)
+       .single();
+     
+     if (insight) {
+       const { error: updateError } = await supabase
+         .from("insights")
+         .update({ heat: Math.max(0, (insight.heat || 0) - 1) })
+         .eq("id", insightId);
+       
+       if (updateError) {
+         return { ok: false as const, error: updateError.message };
+       }
+     }
+   
+     // 从本地移除
+     const newLiked = liked.filter((id: string) => id !== insightId);
+     localStorage.setItem(likedKey, JSON.stringify(newLiked));
+     
+     return { ok: true as const };
+   }
+   
+   // 检查是否已点赞
+   export function isInsightLiked(insightId: string): boolean {
+     const user = getSessionUser();
+     if (!user) return false;
+     
+     const likedKey = `bp_liked_${user.id}`;
+     const liked = JSON.parse(localStorage.getItem(likedKey) || "[]");
+     return liked.includes(insightId);
+   }
+   
    // ==================== Comments (Supabase) ====================
    
    export async function listComments(insightId: string): Promise<Comment[]> {
