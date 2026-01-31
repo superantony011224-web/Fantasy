@@ -2,13 +2,15 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import { getSessionUser } from "@/lib/store";
 
 export default function NewLeaguePage() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const user = getSessionUser();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -23,38 +25,32 @@ export default function NewLeaguePage() {
       return;
     }
 
+    if (!user) {
+      setError("请先登录");
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
 
     try {
-      // 直接插入数据，使用测试用户ID
-      const testUserId = "test-user-" + Date.now();
-      
-      const { data: league, error: createError } = await supabase
-        .from('leagues')
-        .insert({
+      const res = await fetch("/api/leagues", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           name: name.trim(),
-          commissioner_id: testUserId,
-          max_teams: 10,
-          draft_type: 'snake',
-        })
-        .select()
-        .single();
+          userId: user.id,
+        }),
+      });
 
-      if (createError) throw createError;
+      const data = await res.json();
 
-      // 创建选秀设置
-      await supabase
-        .from('draft_settings')
-        .insert({
-          league_id: league.id,
-          draft_type: 'snake',
-        });
+      if (!res.ok) {
+        throw new Error(data.error || "创建失败");
+      }
 
-      alert('联赛创建成功！ID: ' + league.id);
-      
       // 跳转到联赛页面
-      router.push(`/league/${league.id}`);
+      router.push(`/league/${data.league.slug}`);
     } catch (err: any) {
       console.error('Create league error:', err);
       setError(err.message || "创建失败");
@@ -99,6 +95,21 @@ export default function NewLeaguePage() {
               创建你的 Fantasy 篮球联赛
             </p>
           </div>
+
+          {!user && (
+            <div style={{
+              padding: '12px 16px',
+              background: 'rgba(239, 68, 68, 0.15)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              borderRadius: '8px',
+              color: '#fca5a5',
+              fontSize: '14px',
+              marginBottom: '24px',
+              textAlign: 'center'
+            }}>
+              请先登录后再创建联赛
+            </div>
+          )}
 
           <form onSubmit={handleSubmit}>
             {/* 联赛名称 */}
@@ -181,36 +192,23 @@ export default function NewLeaguePage() {
               </button>
               <button
                 type="submit"
-                disabled={submitting || !name.trim()}
+                disabled={submitting || !name.trim() || !user}
                 style={{
                   flex: 2,
                   padding: '14px',
-                  background: submitting || !name.trim() ? '#666' : '#f59e0b',
+                  background: submitting || !name.trim() || !user ? '#666' : '#f59e0b',
                   border: 'none',
                   borderRadius: '10px',
                   color: '#000',
                   fontSize: '15px',
                   fontWeight: '600',
-                  cursor: submitting || !name.trim() ? 'not-allowed' : 'pointer'
+                  cursor: submitting || !name.trim() || !user ? 'not-allowed' : 'pointer'
                 }}
               >
                 {submitting ? '创建中...' : '创建联赛'}
               </button>
             </div>
           </form>
-
-          {/* 测试提示 */}
-          <div style={{
-            marginTop: '24px',
-            padding: '12px',
-            background: 'rgba(59, 130, 246, 0.1)',
-            border: '1px solid rgba(59, 130, 246, 0.3)',
-            borderRadius: '8px',
-            fontSize: '13px',
-            color: '#60a5fa'
-          }}>
-            ⚠️ 测试模式：使用临时用户ID创建联赛
-          </div>
         </div>
       </div>
     </div>
