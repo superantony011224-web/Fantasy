@@ -100,9 +100,13 @@ export type Matchup = {
  * 获取当前用户
  */
 export async function getCurrentUser() {
-  const { data: { user }, error } = await supabase.auth.getUser()
-  if (error) throw error
-  return user
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser()
+    if (error) return null
+    return user
+  } catch {
+    return null
+  }
 }
 
 /**
