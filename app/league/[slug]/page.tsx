@@ -11,7 +11,7 @@ import {
   type League,
   type Team
 } from "@/lib/supabase";
-import { getSessionUser } from "@/lib/store";
+import { getSessionUser, getLeagueMembers, type LeagueMember } from "@/lib/store";
 import DraftRoom from "@/components/DraftRoom";
 
 // 先导入选秀房间组件（稍后创建）
@@ -30,6 +30,10 @@ export default function LeaguePage({ params }: { params: Promise<{ slug: string 
   const [teamName, setTeamName] = useState("");
   const [joining, setJoining] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [members, setMembers] = useState<LeagueMember[]>([]);
+  const [messages, setMessages] = useState<any[]>([]);
+  const [newMessage, setNewMessage] = useState("");
+  const [posting, setPosting] = useState(false);
 
   useEffect(() => {
     init();
@@ -86,11 +90,39 @@ export default function LeaguePage({ params }: { params: Promise<{ slug: string 
       if (teamsError) throw teamsError;
       setTeams(teamsData || []);
 
+      // 2.5 获取成员列表（用于首页显示）
+      const membersData = await getLeagueMembers(leagueId);
+      setMembers(membersData);
+
       // 3. 找到我的队伍
       const user = getSessionUser();
       if (user) {
         const myTeamData = teamsData?.find(t => t.user_id === user.id);
         setMyTeam(myTeamData || null);
+      }
+
+      // 4. 加载最近聊天消息
+      const { data: msgData } = await supabase
+        .from("league_messages")
+        .select("*")
+        .eq("league_id", leagueId)
+        .order("created_at", { ascending: false })
+        .limit(10);
+
+      if (msgData && msgData.length > 0) {
+        const userIds = [...new Set(msgData.map((m: any) => m.user_id))];
+        const { data: users } = await supabase
+          .from("users")
+          .select("id, name, username, avatar_url")
+          .in("id", userIds);
+
+        const withUsers = msgData.map((m: any) => ({
+          ...m,
+          user: users?.find((u) => u.id === m.user_id),
+        }));
+        setMessages(withUsers);
+      } else {
+        setMessages([]);
       }
     } catch (err) {
       console.error("Failed to load league:", err);
@@ -135,6 +167,33 @@ export default function LeaguePage({ params }: { params: Promise<{ slug: string 
     } finally {
       setStarting(false);
     }
+  }
+
+  async function handlePostMessage() {
+    if (!currentUser || !league || !newMessage.trim()) return;
+    setPosting(true);
+    const { data, error } = await supabase
+      .from("league_messages")
+      .insert({
+        league_id: league.id,
+        user_id: currentUser.id,
+        title: null,
+        body: newMessage.trim(),
+      })
+      .select()
+      .single();
+
+    if (!error && data) {
+      setMessages([
+        {
+          ...data,
+          user: { name: currentUser.name, username: currentUser.username },
+        },
+        ...messages,
+      ]);
+      setNewMessage("");
+    }
+    setPosting(false);
   }
 
   if (loading) {
@@ -448,6 +507,136 @@ export default function LeaguePage({ params }: { params: Promise<{ slug: string 
             </div>
           ))}
         </div>
+      </div>
+
+      {/* 成员列表 */}
+      <div style={{
+        background: 'white',
+        padding: '24px',
+        borderRadius: '12px',
+        marginBottom: '24px'
+      }}>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '16px'
+        }}>
+          <h3 style={{ margin: 0, fontSize: '20px' }}>👥 成员</h3>
+          <Link href={`/league/${leagueId}/members`} style={{ color: '#3b82f6', textDecoration: 'none', fontWeight: 600 }}>
+            查看全部 →
+          </Link>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '12px' }}>
+          {members.slice(0, 8).map((m) => {
+            const name = m.user?.username || m.user?.name || "Anonymous";
+            return (
+              <div key={m.id} style={{
+                padding: '12px',
+                border: '1px solid #e2e8f0',
+                borderRadius: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px'
+              }}>
+                <div style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '10px',
+                  background: '#e2e8f0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 700
+                }}>
+                  {name[0]?.toUpperCase()}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600 }}>{name}</div>
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>
+                    {m.team_name || "队伍"}
+                  </div>
+                </div>
+                {m.role === "owner" && <span style={{ fontSize: '14px' }}>👑</span>}
+              </div>
+            );
+          })}
+          {members.length === 0 && (
+            <div style={{ color: '#94a3b8' }}>暂无成员</div>
+          )}
+        </div>
+      </div>
+
+      {/* 聊天框 */}
+      <div style={{
+        background: 'white',
+        padding: '24px',
+        borderRadius: '12px',
+        marginBottom: '24px'
+      }}>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '12px'
+        }}>
+          <h3 style={{ margin: 0, fontSize: '20px' }}>💬 联赛聊天</h3>
+          <Link href={`/league/${leagueId}/board`} style={{ color: '#3b82f6', textDecoration: 'none', fontWeight: 600 }}>
+            进入讨论区 →
+          </Link>
+        </div>
+
+        <div style={{ display: 'grid', gap: '10px', marginBottom: '12px' }}>
+          {messages.length === 0 && (
+            <div style={{ color: '#94a3b8' }}>暂无聊天，快发第一条吧！</div>
+          )}
+          {messages.map((msg) => {
+            const name = msg.user?.username || msg.user?.name || "Anonymous";
+            return (
+              <div key={msg.id} style={{
+                padding: '10px 12px',
+                border: '1px solid #e2e8f0',
+                borderRadius: '10px'
+              }}>
+                <div style={{ fontWeight: 600, marginBottom: '4px' }}>{name}</div>
+                <div style={{ color: '#334155' }}>{msg.body}</div>
+              </div>
+            );
+          })}
+        </div>
+
+        {currentUser ? (
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <input
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              placeholder="说点什么..."
+              style={{
+                flex: 1,
+                padding: '10px 12px',
+                border: '1px solid #e2e8f0',
+                borderRadius: '10px'
+              }}
+            />
+            <button
+              onClick={handlePostMessage}
+              disabled={posting || !newMessage.trim()}
+              style={{
+                padding: '10px 16px',
+                borderRadius: '10px',
+                border: 'none',
+                background: posting || !newMessage.trim() ? '#cbd5f5' : '#6366f1',
+                color: 'white',
+                fontWeight: 600,
+                cursor: posting || !newMessage.trim() ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {posting ? "发送中..." : "发送"}
+            </button>
+          </div>
+        ) : (
+          <div style={{ color: '#94a3b8' }}>请先登录后发言</div>
+        )}
       </div>
 
       {myTeam && (
