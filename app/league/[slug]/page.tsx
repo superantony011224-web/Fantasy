@@ -323,6 +323,23 @@ export default function LeaguePage({ params }: { params: Promise<{ slug: string 
               </div>
             )}
           </div>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {myTeam && (
+              <Link
+                href={`/league/${leagueId}/draft`}
+                style={{
+                  padding: '10px 20px',
+                  background: 'rgba(255, 255, 255, 0.2)',
+                  border: '1px solid rgba(255, 255, 255, 0.3)',
+                  borderRadius: '8px',
+                  color: 'white',
+                  fontWeight: '600',
+                  textDecoration: 'none'
+                }}
+              >
+                🏀 进入选秀室
+              </Link>
+            )}
           
           {!myTeam ? (
             <button 
@@ -351,6 +368,7 @@ export default function LeaguePage({ params }: { params: Promise<{ slug: string 
               ✅ 已加入
             </div>
           )}
+          </div>
         </div>
       </div>
 
