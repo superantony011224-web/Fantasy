@@ -176,7 +176,7 @@ export default function DraftRoom({ leagueId, myTeam }: { leagueId: string; myTe
                     fontWeight: 600,
                   }}
                 >
-                  {pickingId === p.id ? "选择中..." : "选中"}
+                  {pickingId !== null && pickingId === Number(p.id) ? "选择中..." : "选中"}
                 </button>
               </div>
             ))}
