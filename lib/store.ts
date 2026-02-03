@@ -182,60 +182,96 @@
      localStorage.setItem(SESSION_KEY, JSON.stringify(user));
    }
    
-   export function logout() {
+   export async function logout() {
      if (typeof window === "undefined") return;
+     await supabase.auth.signOut();
      localStorage.removeItem(SESSION_KEY);
    }
    
-   // ==================== Auth (Supabase + localStorage for password) ====================
+   // ==================== Auth (Supabase Auth) ====================
    
    export async function signup(name: string, email: string, password: string) {
-     const { data: existingUser } = await supabase
-       .from("users")
-       .select("id")
-       .eq("email", email)
-       .single();
+     const username = email.split("@")[0];
    
-     if (existingUser) {
-       return { ok: false as const, error: "Email already exists" };
+     const { data: authData, error: authError } = await supabase.auth.signUp({
+       email,
+       password,
+       options: {
+         data: { name, username },
+       },
+     });
+   
+     if (authError) {
+       return { ok: false as const, error: authError.message };
      }
    
-     const username = email.split("@")[0];
-     const { data: newUser, error } = await supabase
+     const authUser = authData.user;
+     if (!authUser) {
+       return {
+         ok: false as const,
+         error: "Signup requires email confirmation. Please check your inbox.",
+       };
+     }
+   
+     const { data: newUser, error: userError } = await supabase
        .from("users")
-       .insert({ name, email, username })
+       .insert({
+         id: authUser.id,
+         name,
+         email,
+         username,
+       })
        .select()
        .single();
    
-     if (error) {
-       return { ok: false as const, error: error.message };
+     if (userError) {
+       return { ok: false as const, error: userError.message };
      }
-   
-     // Store password in localStorage (simplified, use Supabase Auth in production)
-     const users = JSON.parse(localStorage.getItem("bp_users") || "[]");
-     users.push({ id: newUser.id, email, password });
-     localStorage.setItem("bp_users", JSON.stringify(users));
    
      setSessionUser(newUser);
      return { ok: true as const, user: newUser };
    }
    
    export async function login(email: string, password: string) {
-     const users = JSON.parse(localStorage.getItem("bp_users") || "[]");
-     const storedUser = users.find((u: any) => u.email === email);
+     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+       email,
+       password,
+     });
    
-     if (!storedUser || storedUser.password !== password) {
+     if (authError) {
        return { ok: false as const, error: "Invalid credentials" };
      }
    
-     const { data: user, error } = await supabase
+     const authUser = authData.user;
+     if (!authUser) {
+       return { ok: false as const, error: "User not found" };
+     }
+   
+     const { data: user, error: userError } = await supabase
        .from("users")
        .select("*")
-       .eq("email", email)
+       .eq("id", authUser.id)
        .single();
    
-     if (error || !user) {
-       return { ok: false as const, error: "User not found" };
+     if (userError || !user) {
+       const username = email.split("@")[0];
+       const { data: createdUser, error: createError } = await supabase
+         .from("users")
+         .insert({
+           id: authUser.id,
+           name: authUser.user_metadata?.name || username,
+           email,
+           username: authUser.user_metadata?.username || username,
+         })
+         .select()
+         .single();
+   
+       if (createError || !createdUser) {
+         return { ok: false as const, error: "User profile not found" };
+       }
+   
+       setSessionUser(createdUser);
+       return { ok: true as const, user: createdUser };
      }
    
      setSessionUser(user);
