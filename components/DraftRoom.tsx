@@ -16,7 +16,7 @@ export default function DraftRoom({ leagueId, myTeam }: { leagueId: string; myTe
   const [draftSettings, setDraftSettings] = useState<DraftSettings | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   const [picks, setPicks] = useState<DraftPick[]>([]);
-  const [draftedIds, setDraftedIds] = useState<number[]>([]);
+  const [draftedIds, setDraftedIds] = useState<(number | string)[]>([]);
   const [currentTeam, setCurrentTeam] = useState<Team | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
