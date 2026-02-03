@@ -21,11 +21,18 @@
    
    export type League = {
      id: string;
-     slug: string;
      name: string;
-     owner_id: string;
-     visibility: "public" | "private";
      created_at: string;
+     // Optional fields depending on schema/version
+     slug?: string;
+     visibility?: "public" | "private";
+     owner_id?: string;
+     commissioner_id?: string;
+     season?: string;
+     status?: "draft_pending" | "drafting" | "active" | "completed";
+     max_teams?: number;
+     draft_type?: "snake" | "linear";
+     scoring_type?: string;
    };
    
    export type Insight = {
@@ -659,23 +666,41 @@
    
    // ==================== Leagues (Supabase) ====================
    
+   function normalizeLeague(raw: any): League {
+     return {
+       ...raw,
+       slug: raw?.slug || raw?.id,
+       owner_id: raw?.owner_id || raw?.commissioner_id,
+       visibility: raw?.visibility || "public",
+       max_teams: raw?.max_teams ?? 10,
+     } as League;
+   }
+
    export async function listLeagues(): Promise<League[]> {
      const { data, error } = await supabase
        .from("leagues")
        .select("*")
        .order("created_at", { ascending: false });
      if (error) return [];
-     return data || [];
+     return (data || []).map(normalizeLeague);
    }
    
    export async function getLeagueBySlug(slug: string): Promise<League | null> {
+     // Prefer id match (current routing uses id)
+     const byId = await supabase
+       .from("leagues")
+       .select("*")
+       .eq("id", slug)
+       .single();
+     if (byId.data && !byId.error) return normalizeLeague(byId.data);
+
      const { data, error } = await supabase
        .from("leagues")
        .select("*")
        .eq("slug", slug)
        .single();
-     if (error) return null;
-     return data;
+     if (error || !data) return null;
+     return normalizeLeague(data);
    }
    
    export async function createLeague(input: {
@@ -685,20 +710,14 @@
      const user = getSessionUser();
      if (!user) return { ok: false as const, error: "Login required" };
    
-     const slug = input.name
-       .trim()
-       .toLowerCase()
-       .replace(/[^a-z0-9]+/g, "-")
-       .replace(/^-+|-+$/g, "")
-       .slice(0, 40);
-   
      const { data, error } = await supabase
        .from("leagues")
        .insert({
          name: input.name.trim(),
-         slug,
-         owner_id: user.id,
-         visibility: input.visibility,
+         commissioner_id: user.id,
+         max_teams: 10,
+         draft_type: "snake",
+         status: "draft_pending",
        })
        .select()
        .single();
@@ -707,14 +726,7 @@
        return { ok: false as const, error: error.message };
      }
 
-     // 创建者自动成为成员（owner）
-     await supabase.from("league_members").insert({
-       league_id: data.id,
-       user_id: user.id,
-       role: "owner",
-     });
-
-     return { ok: true as const, league: data };
+     return { ok: true as const, league: normalizeLeague(data) };
    }
 
    // 联赛成员类型
@@ -724,39 +736,52 @@
      user_id: string;
      role: "owner" | "member";
      joined_at: string;
+     team_name?: string;
+     draft_position?: number;
      user?: User;
    };
 
    // 获取联赛成员列表
    export async function getLeagueMembers(leagueId: string): Promise<LeagueMember[]> {
-     // 先获取成员列表
-     const { data: members, error } = await supabase
-       .from("league_members")
+     const { data: league } = await supabase
+       .from("leagues")
+       .select("commissioner_id, owner_id")
+       .eq("id", leagueId)
+       .single();
+     const ownerId = (league as any)?.owner_id || (league as any)?.commissioner_id;
+
+     const { data: teams, error } = await supabase
+       .from("teams")
        .select("*")
        .eq("league_id", leagueId)
-       .order("joined_at", { ascending: true });
+       .order("draft_position", { ascending: true });
      
-     if (error || !members) return [];
+     if (error || !teams) return [];
 
-     // 获取所有用户 ID
-     const userIds = members.map(m => m.user_id);
+     const userIds = teams.map((t: any) => t.user_id);
+     const { data: users } = userIds.length
+       ? await supabase
+           .from("users")
+           .select("id, name, username, avatar_url")
+           .in("id", userIds)
+       : { data: [] as User[] };
      
-     // 获取用户信息
-     const { data: users } = await supabase
-       .from("users")
-       .select("id, name, username, avatar_url");
-     
-     // 手动关联
-     return members.map(member => ({
-       ...member,
-       user: users?.find(u => u.id === member.user_id) || undefined,
+     return teams.map((team: any) => ({
+       id: team.id,
+       league_id: team.league_id,
+       user_id: team.user_id,
+       role: team.user_id === ownerId ? "owner" : "member",
+       joined_at: team.created_at,
+       team_name: team.team_name,
+       draft_position: team.draft_position,
+       user: users?.find((u) => u.id === team.user_id) || undefined,
      }));
    }
 
    // 获取联赛成员数量
    export async function getLeagueMemberCount(leagueId: string): Promise<number> {
      const { count, error } = await supabase
-       .from("league_members")
+       .from("teams")
        .select("*", { count: "exact", head: true })
        .eq("league_id", leagueId);
      if (error) return 0;
@@ -769,7 +794,7 @@
      if (!user) return false;
 
      const { data, error } = await supabase
-       .from("league_members")
+       .from("teams")
        .select("id")
        .eq("league_id", leagueId)
        .eq("user_id", user.id)
@@ -778,23 +803,43 @@
      return !!data && !error;
    }
 
-   // 加入联赛
-   export async function joinLeague(leagueId: string) {
+   // 加入联赛（创建队伍）
+   export async function joinLeague(leagueId: string, teamName?: string) {
      const user = getSessionUser();
      if (!user) return { ok: false as const, error: "Login required" };
 
-     // 检查是否已经是成员
      const isMember = await isLeagueMember(leagueId);
      if (isMember) {
        return { ok: false as const, error: "Already a member" };
      }
 
+     const { data: league } = await supabase
+       .from("leagues")
+       .select("max_teams")
+       .eq("id", leagueId)
+       .single();
+     const maxTeams = (league as any)?.max_teams || 10;
+
+     const { count } = await supabase
+       .from("teams")
+       .select("*", { count: "exact", head: true })
+       .eq("league_id", leagueId);
+
+     if ((count || 0) >= maxTeams) {
+       return { ok: false as const, error: "League is full" };
+     }
+
+     const defaultName =
+       teamName?.trim() ||
+       (user.username ? `${user.username}` : user.name ? `${user.name}` : "My Team");
+
      const { data, error } = await supabase
-       .from("league_members")
+       .from("teams")
        .insert({
          league_id: leagueId,
          user_id: user.id,
-         role: "member",
+         team_name: defaultName,
+         draft_position: (count || 0) + 1,
        })
        .select()
        .single();
@@ -811,7 +856,7 @@
      if (!user) return { ok: false as const, error: "Login required" };
 
      const { error } = await supabase
-       .from("league_members")
+       .from("teams")
        .delete()
        .eq("league_id", leagueId)
        .eq("user_id", user.id);

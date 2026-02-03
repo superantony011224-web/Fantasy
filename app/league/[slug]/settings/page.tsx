@@ -23,6 +23,7 @@ function LeagueNav({ slug, isOwner }: { slug: string; isOwner: boolean }) {
     { href: `/league/${slug}/schedule`, label: t("赛程表", "Schedule"), icon: "📅" },
     { href: `/league/${slug}/board`, label: t("讨论区", "Message Board"), icon: "💬" },
     { href: `/league/${slug}/members`, label: t("成员", "Members"), icon: "👥" },
+    { href: `/league/${slug}/roster`, label: t("阵容", "Roster"), icon: "🧩" },
   ];
   if (isOwner) {
     mainNav.push({ href: `/league/${slug}/settings`, label: t("设置", "Settings"), icon: "⚙️" });
@@ -72,7 +73,7 @@ export default function SettingsPage() {
       setName(leagueData.name);
       setDescription((leagueData as any).description || "");
       setMaxTeams((leagueData as any).max_teams || 10);
-      setVisibility(leagueData.visibility);
+      setVisibility((leagueData.visibility as any) || "public");
       setScoringType((leagueData as any).scoring_type || "head_to_head_categories");
       setDraftType((leagueData as any).draft_type || "snake");
     }

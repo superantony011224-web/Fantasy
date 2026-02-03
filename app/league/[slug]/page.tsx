@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect, use } from "react";
+import Link from "next/link";
 import {
   supabase,
   joinLeague,
@@ -11,6 +12,7 @@ import {
   type Team
 } from "@/lib/supabase";
 import { getSessionUser } from "@/lib/store";
+import DraftRoom from "@/components/DraftRoom";
 
 // 先导入选秀房间组件（稍后创建）
 // import DraftRoom from "@/components/DraftRoom";
@@ -156,11 +158,31 @@ export default function LeaguePage({ params }: { params: Promise<{ slug: string 
   // 如果选秀已开始且用户已加入，显示选秀房间
   if (league.status === "drafting" && myTeam) {
     return (
-      <div style={{ padding: '20px' }}>
-        <h1>🏀 选秀进行中...</h1>
-        <p>选秀房间功能正在开发中</p>
-        <p>您的队伍: {myTeam.team_name}</p>
-        <p>选秀位置: #{myTeam.draft_position}</p>
+      <div style={{ 
+        minHeight: '100vh',
+        background: '#f5f7fa',
+        padding: '24px'
+      }}>
+        <div style={{ marginBottom: '16px' }}>
+          <Link
+            href={`/league/${leagueId}`}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '8px 12px',
+              borderRadius: '8px',
+              background: '#fff',
+              border: '1px solid #e2e8f0',
+              color: '#334155',
+              fontWeight: 600,
+              textDecoration: 'none',
+            }}
+          >
+            ← 返回联赛主页
+          </Link>
+        </div>
+        <DraftRoom leagueId={leagueId} myTeam={myTeam} />
       </div>
     );
   }
@@ -174,6 +196,25 @@ export default function LeaguePage({ params }: { params: Promise<{ slug: string 
       background: '#f5f7fa',
       padding: '24px'
     }}>
+      <div style={{ marginBottom: '16px' }}>
+        <Link
+          href="/league"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '8px 12px',
+            borderRadius: '8px',
+            background: '#fff',
+            border: '1px solid #e2e8f0',
+            color: '#334155',
+            fontWeight: 600,
+            textDecoration: 'none',
+          }}
+        >
+          ← 返回公开联赛
+        </Link>
+      </div>
       {/* 联赛头部 */}
       <div style={{
         background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
@@ -408,6 +449,38 @@ export default function LeaguePage({ params }: { params: Promise<{ slug: string 
           ))}
         </div>
       </div>
+
+      {myTeam && (
+        <div style={{
+          background: 'white',
+          padding: '24px',
+          borderRadius: '12px',
+          marginBottom: '24px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <div>
+            <h3 style={{ margin: '0 0 8px 0', fontSize: '18px' }}>🧩 我的阵容</h3>
+            <p style={{ margin: 0, color: '#64748b' }}>
+              管理你的球员阵容，添加或移除球员
+            </p>
+          </div>
+          <Link
+            href={`/league/${leagueId}/roster`}
+            style={{
+              padding: '10px 18px',
+              background: '#f59e0b',
+              borderRadius: '10px',
+              color: '#111',
+              fontWeight: 600,
+              textDecoration: 'none'
+            }}
+          >
+            管理阵容
+          </Link>
+        </div>
+      )}
 
       {/* 加入联赛弹窗 */}
       {showJoinModal && (

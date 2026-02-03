@@ -22,6 +22,7 @@ function LeagueNav({ slug, isOwner }: { slug: string; isOwner: boolean }) {
     { href: `/league/${slug}/schedule`, label: t("赛程表", "Schedule"), icon: "📅" },
     { href: `/league/${slug}/board`, label: t("讨论区", "Message Board"), icon: "💬" },
     { href: `/league/${slug}/members`, label: t("成员", "Members"), icon: "👥" },
+    { href: `/league/${slug}/roster`, label: t("阵容", "Roster"), icon: "🧩" },
   ];
   if (isOwner) {
     mainNav.push({ href: `/league/${slug}/settings`, label: t("设置", "Settings"), icon: "⚙️" });

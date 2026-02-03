@@ -40,6 +40,25 @@ export async function POST(request: Request) {
       draft_type: "snake",
     });
 
+    // Auto-create commissioner's team
+    const { data: userProfile } = await supabaseAdmin
+      .from("users")
+      .select("username, name")
+      .eq("id", userId)
+      .single();
+
+    const teamName =
+      (userProfile?.username && `${userProfile.username}`) ||
+      (userProfile?.name && `${userProfile.name}`) ||
+      "Commissioner Team";
+
+    await supabaseAdmin.from("teams").insert({
+      league_id: league.id,
+      user_id: userId,
+      team_name: teamName,
+      draft_position: 1,
+    });
+
     return NextResponse.json({ status: "success", league });
   } catch (error: any) {
     console.error("Leagues POST error:", error);
